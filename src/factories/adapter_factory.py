@@ -1,0 +1,103 @@
+"""
+src/factories/adapter_factory.py
+
+Abstract factory that constructs every infrastructure adapter (the concrete
+implementations of the domain ports). No `new`-style direct instantiation
+of an adapter happens anywhere outside this class (and SdkClientFactory,
+which it delegates raw SDK-client construction to).
+"""
+
+from __future__ import annotations
+
+from typing import Callable
+
+from rich.console import Console
+
+from src.config.settings import Settings
+from src.domain.interfaces import (
+    IAnswerGenerator,
+    IDocumentLoader,
+    IEmbeddingProvider,
+    IEvalReporter,
+    ILogger,
+    IPromptBuilder,
+    ITextChunker,
+    IVectorIdStrategy,
+    IVectorStore,
+)
+from src.factories.document_loader_factory import DocumentLoaderFactory
+from src.factories.sdk_client_factory import SdkClientFactory
+from src.infrastructure.chunking import RecursiveTextChunker
+from src.infrastructure.embeddings import OllamaEmbeddingProvider
+from src.infrastructure.generation import DefaultPromptBuilder, OllamaAnswerGenerator
+from src.infrastructure.loaders import DocxDocumentLoader, PdfDocumentLoader
+from src.infrastructure.reporting import RichEvalReporter
+from src.infrastructure.vector_store import PineconeVectorStore, Sha256VectorIdStrategy
+
+
+class AdapterFactory:
+    def __init__(self, settings: Settings, logger_factory: Callable[[str], ILogger]) -> None:
+        self._settings = settings
+        self._logger_factory = logger_factory
+
+    def create_document_loaders(self) -> list[IDocumentLoader]:
+        return [
+            PdfDocumentLoader(logger=self._logger_factory("loaders.pdf")),
+            DocxDocumentLoader(
+                logger=self._logger_factory("loaders.docx"),
+                ingestion_settings=self._settings.ingestion,
+            ),
+        ]
+
+    def create_document_loader_resolver(self) -> DocumentLoaderFactory:
+        return DocumentLoaderFactory(
+            loaders=self.create_document_loaders(),
+            logger=self._logger_factory("loaders.resolver"),
+        )
+
+    def create_text_chunker(self) -> ITextChunker:
+        return RecursiveTextChunker(
+            logger=self._logger_factory("chunking"),
+            chunking_settings=self._settings.chunking,
+        )
+
+    def create_embedding_provider(self) -> IEmbeddingProvider:
+        ollama_client = SdkClientFactory.create_ollama_client(self._settings.ollama)
+        return OllamaEmbeddingProvider(
+            client=ollama_client,
+            logger=self._logger_factory("embeddings"),
+            ollama_settings=self._settings.ollama,
+            ingestion_settings=self._settings.ingestion,
+        )
+
+    def create_vector_id_strategy(self) -> IVectorIdStrategy:
+        return Sha256VectorIdStrategy()
+
+    def create_vector_store(self, embedding_dimension: int) -> IVectorStore:
+        pinecone_client = SdkClientFactory.create_pinecone_client(self._settings.pinecone)
+        return PineconeVectorStore(
+            client=pinecone_client,
+            id_strategy=self.create_vector_id_strategy(),
+            logger=self._logger_factory("vector_store"),
+            pinecone_settings=self._settings.pinecone,
+            ingestion_settings=self._settings.ingestion,
+            embedding_dimension=embedding_dimension,
+        )
+
+    def create_prompt_builder(self) -> IPromptBuilder:
+        return DefaultPromptBuilder(
+            logger=self._logger_factory("prompt_builder"),
+            prompt_settings=self._settings.prompt,
+        )
+
+    def create_answer_generator(self, token_sink: Callable[[str], None] | None = None) -> IAnswerGenerator:
+        ollama_client = SdkClientFactory.create_ollama_client(self._settings.ollama)
+        return OllamaAnswerGenerator(
+            client=ollama_client,
+            logger=self._logger_factory("generator"),
+            ollama_settings=self._settings.ollama,
+            token_sink=token_sink,
+        )
+
+    def create_eval_reporter(self, console: Console | None = None) -> IEvalReporter:
+        return RichEvalReporter(console=console or Console())
