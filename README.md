@@ -1,8 +1,11 @@
 # RAG-with-Pinecone — Layered / SOLID Refactor
 
-## How to run
+## How to run through cmd
 
 ```bash
+python -m venv venv
+venv\Scripts\activate
+
 pip install -r requirements.txt
 cp .env.example .env   # fill in PINECONE_API_KEY at minimum
 
@@ -10,6 +13,11 @@ python main.py ingest                  # ingests data/raw by default
 python main.py ask "What is the Magi story about?"
 python main.py eval
 python main.py debug "Who cut Della's hair?"
+
+# or simply
+
+streamlit run app.py
+
 ```
 
 ## Layer map
@@ -68,21 +76,21 @@ Every class receives its collaborators through `__init__` — nothing reaches fo
 
 ## Old -> new mapping
 
-| Old file | New home |
-|---|---|
-| `config/settings.py` (`settings` singleton) | `config/settings.py` (pure dataclasses) + `factories/settings_factory.py` (builds it) |
-| `config/pinecone_client.py` | `factories/sdk_client_factory.py` (client) + `infrastructure/vector_store/pinecone_vector_store.py` (logic) |
-| `embeddings/embedder.py` | `infrastructure/embeddings/ollama_embedding_provider.py` |
-| `ingestion/loader.py` | `infrastructure/loaders/pdf_loader.py` + `docx_loader.py` + `factories/document_loader_factory.py` |
-| `ingestion/chunker.py` | `infrastructure/chunking/recursive_chunker.py` |
-| `ingestion/upsert.py` | `infrastructure/vector_store/pinecone_vector_store.py` (`upsert`) + `sha256_vector_id_strategy.py` |
-| `ingestion/pipeline.py` | `application/services/ingestion_service.py` |
-| `retrieval/retriever.py` | `application/services/retrieval_service.py` + `infrastructure/vector_store/pinecone_vector_store.py` (`query`) |
-| `generation/prompt_builder.py` | `infrastructure/generation/default_prompt_builder.py` |
-| `generation/generator.py` | `infrastructure/generation/ollama_answer_generator.py` |
-| `generation/rag.py` | `application/services/rag_query_service.py` |
-| `utils/eval.py` | `application/services/evaluation_service.py` (logic) + `infrastructure/reporting/rich_eval_reporter.py` (rendering) |
-| `utils/logger.py` | `infrastructure/logging/rich_logger.py` + `factories/logger_factory.py` |
+| Old file                                    | New home                                                                                                            |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `config/settings.py` (`settings` singleton) | `config/settings.py` (pure dataclasses) + `factories/settings_factory.py` (builds it)                               |
+| `config/pinecone_client.py`                 | `factories/sdk_client_factory.py` (client) + `infrastructure/vector_store/pinecone_vector_store.py` (logic)         |
+| `embeddings/embedder.py`                    | `infrastructure/embeddings/ollama_embedding_provider.py`                                                            |
+| `ingestion/loader.py`                       | `infrastructure/loaders/pdf_loader.py` + `docx_loader.py` + `factories/document_loader_factory.py`                  |
+| `ingestion/chunker.py`                      | `infrastructure/chunking/recursive_chunker.py`                                                                      |
+| `ingestion/upsert.py`                       | `infrastructure/vector_store/pinecone_vector_store.py` (`upsert`) + `sha256_vector_id_strategy.py`                  |
+| `ingestion/pipeline.py`                     | `application/services/ingestion_service.py`                                                                         |
+| `retrieval/retriever.py`                    | `application/services/retrieval_service.py` + `infrastructure/vector_store/pinecone_vector_store.py` (`query`)      |
+| `generation/prompt_builder.py`              | `infrastructure/generation/default_prompt_builder.py`                                                               |
+| `generation/generator.py`                   | `infrastructure/generation/ollama_answer_generator.py`                                                              |
+| `generation/rag.py`                         | `application/services/rag_query_service.py`                                                                         |
+| `utils/eval.py`                             | `application/services/evaluation_service.py` (logic) + `infrastructure/reporting/rich_eval_reporter.py` (rendering) |
+| `utils/logger.py`                           | `infrastructure/logging/rich_logger.py` + `factories/logger_factory.py`                                             |
 
 ## Behavior preserved exactly
 
