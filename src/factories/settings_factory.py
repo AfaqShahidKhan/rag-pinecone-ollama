@@ -1,9 +1,7 @@
 """
 src/factories/settings_factory.py
 
-Factory responsible for the one thing nothing else in the codebase should
-do directly: reading environment variables and turning them into a frozen
-Settings object. Everything downstream receives Settings by injection.
+The only module allowed to read os.environ. Builds a fully frozen Settings object.
 """
 
 from __future__ import annotations
@@ -15,28 +13,33 @@ from dotenv import load_dotenv
 
 from src.config.settings import (
     ChunkingSettings,
+    ChromaSettings,
     IngestionSettings,
     OllamaSettings,
     PineconeSettings,
     PromptSettings,
+    QdrantSettings,
     RetrievalSettings,
     Settings,
+    VectorStoreType,
 )
 
 
 class SettingsFactory:
-    """Abstract-factory-style builder: one method, one fully-formed Settings object."""
-
     def __init__(self, project_root: Path, env_file: str = ".env") -> None:
         self._project_root = project_root
         self._env_file = env_file
 
-    def create(self) -> Settings:
+    def create(self, vector_store_type: VectorStoreType | None = None) -> Settings:
         load_dotenv(self._project_root / self._env_file)
+
+        store_type = vector_store_type or VectorStoreType(
+            self._optional("VECTOR_STORE_TYPE", VectorStoreType.PINECONE.value)
+        )
 
         return Settings(
             pinecone=PineconeSettings(
-                api_key=self._require("PINECONE_API_KEY"),
+                api_key=self._optional("PINECONE_API_KEY", ""),
                 index_name=self._optional("PINECONE_INDEX_NAME", "rag-index"),
                 cloud=self._optional("PINECONE_CLOUD", "aws"),
                 region=self._optional("PINECONE_REGION", "us-east-1"),
@@ -63,6 +66,16 @@ class SettingsFactory:
                 embed_retries=int(self._optional("EMBED_RETRIES", "3")),
                 docx_pseudo_page_chars=int(self._optional("DOCX_PSEUDO_PAGE_CHARS", "3000")),
             ),
+            chroma=ChromaSettings(
+                persist_directory=self._optional("CHROMA_PERSIST_DIR", "./data/chroma"),
+                collection_name=self._optional("CHROMA_COLLECTION", "rag-collection"),
+            ),
+            qdrant=QdrantSettings(
+                url=os.getenv("QDRANT_URL"),   # None if unset = local mode
+                path=self._optional("QDRANT_PATH", "./data/qdrant"),
+                collection_name=self._optional("QDRANT_COLLECTION", "rag-collection"),
+            ),
+            vector_store_type=store_type,
             project_root=self._project_root,
         )
 
@@ -72,7 +85,7 @@ class SettingsFactory:
         if not value:
             raise EnvironmentError(
                 f"Required environment variable '{key}' is not set. "
-                f"Copy .env.example -> .env and fill in the values."
+                "Copy .env.example -> .env and fill in the values."
             )
         return value
 

@@ -5,3 +5,6 @@ __pycache__/
 *.pyc
 .DS_Store
 data/raw/
+data/chroma/
+data/qdrant/
+.streamlit/

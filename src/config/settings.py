@@ -1,18 +1,26 @@
 """
 src/config/settings.py
 
-Pure configuration value objects. Unlike the original version, this module
-does NOT instantiate a module-level `settings = Settings()` singleton.
-Settings is built exactly once, in the composition root, via
-SettingsFactory (see src/factories/settings_factory.py) and then passed
-by constructor injection to everything that needs it.
+Pure configuration value objects. No module-level singleton instance.
+Built once in the composition root via SettingsFactory, injected everywhere.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from enum import Enum
 from pathlib import Path
 
+
+# ── Vector store selector ────────────────────────────────────────────────────
+
+class VectorStoreType(str, Enum):
+    PINECONE = "pinecone"
+    CHROMA   = "chroma"
+    QDRANT   = "qdrant"
+
+
+# ── Per-database settings ────────────────────────────────────────────────────
 
 @dataclass(frozen=True)
 class PineconeSettings:
@@ -21,6 +29,22 @@ class PineconeSettings:
     cloud: str = "aws"
     region: str = "us-east-1"
 
+
+@dataclass(frozen=True)
+class ChromaSettings:
+    persist_directory: str = "./data/chroma"
+    collection_name: str = "rag-collection"
+
+
+@dataclass(frozen=True)
+class QdrantSettings:
+    # url=None → local on-disk mode (no server required)
+    url: str | None = None
+    path: str = "./data/qdrant"
+    collection_name: str = "rag-collection"
+
+
+# ── Other settings ───────────────────────────────────────────────────────────
 
 @dataclass(frozen=True)
 class OllamaSettings:
@@ -68,6 +92,8 @@ class IngestionSettings:
     docx_pseudo_page_chars: int = 3000
 
 
+# ── Root settings object ─────────────────────────────────────────────────────
+
 @dataclass(frozen=True)
 class Settings:
     pinecone: PineconeSettings
@@ -76,6 +102,9 @@ class Settings:
     retrieval: RetrievalSettings = field(default_factory=RetrievalSettings)
     prompt: PromptSettings = field(default_factory=PromptSettings)
     ingestion: IngestionSettings = field(default_factory=IngestionSettings)
+    chroma: ChromaSettings = field(default_factory=ChromaSettings)
+    qdrant: QdrantSettings = field(default_factory=QdrantSettings)
+    vector_store_type: VectorStoreType = VectorStoreType.PINECONE
     project_root: Path = field(default_factory=Path.cwd)
 
     @property
