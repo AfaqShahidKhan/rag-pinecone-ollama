@@ -2,12 +2,12 @@
 src/factories/adapter_factory.py
 
 Abstract factory that constructs every infrastructure adapter.
-The only place in the codebase where concrete adapter classes are instantiated.
-create_vector_store() selects the correct adapter based on VectorStoreType.
+Phase 2: HtmlLoader, JsonLoader, OcrLoader registered in create_document_loaders().
 """
 
 from __future__ import annotations
 
+import os
 from typing import Callable
 
 from rich.console import Console
@@ -16,6 +16,7 @@ from src.config.settings import Settings, VectorStoreType
 from src.domain.interfaces import (
     IAnswerGenerator,
     IDocumentLoader,
+    IDocumentProcessor,
     IEmbeddingProvider,
     IEvalReporter,
     ILogger,
@@ -29,7 +30,20 @@ from src.factories.sdk_client_factory import SdkClientFactory
 from src.infrastructure.chunking import RecursiveTextChunker
 from src.infrastructure.embeddings import OllamaEmbeddingProvider
 from src.infrastructure.generation import DefaultPromptBuilder, OllamaAnswerGenerator
-from src.infrastructure.loaders import DocxDocumentLoader, PdfDocumentLoader
+from src.infrastructure.loaders import (
+    DocxDocumentLoader,
+    HtmlLoader,
+    JsonLoader,
+    OcrLoader,
+    PdfDocumentLoader,
+)
+from src.infrastructure.pre_processing import (
+    MetadataNormalizer,
+    PreProcessingPipeline,
+    SchemaMapper,
+    TextSanitizer,
+    UnicodeNormalizer,
+)
 from src.infrastructure.reporting import RichEvalReporter
 from src.infrastructure.vector_store import (
     ChromaVectorStore,
@@ -48,15 +62,35 @@ class AdapterFactory:
     ) -> None:
         self._settings = settings
         self._logger_factory = logger_factory
-        # UI override wins; falls back to whatever is in Settings
         self._vector_store_type = vector_store_type or settings.vector_store_type
 
+    # ── Document loading ───────────────────────────────────────────────────────
+
     def create_document_loaders(self) -> list[IDocumentLoader]:
+        """
+        Returns all registered loaders in priority order.
+        DocumentLoaderFactory.resolve_for_file() picks the first loader
+        whose supports() returns True, so order matters for any overlapping
+        extensions (there are none currently).
+        """
+        ocr_lang = os.getenv("TESSERACT_LANG", "eng")
         return [
-            PdfDocumentLoader(logger=self._logger_factory("loaders.pdf")),
+            PdfDocumentLoader(
+                logger=self._logger_factory("loaders.pdf"),
+            ),
             DocxDocumentLoader(
                 logger=self._logger_factory("loaders.docx"),
                 ingestion_settings=self._settings.ingestion,
+            ),
+            HtmlLoader(
+                logger=self._logger_factory("loaders.html"),
+            ),
+            JsonLoader(
+                logger=self._logger_factory("loaders.json"),
+            ),
+            OcrLoader(
+                logger=self._logger_factory("loaders.ocr"),
+                lang=ocr_lang,
             ),
         ]
 
@@ -66,11 +100,29 @@ class AdapterFactory:
             logger=self._logger_factory("loaders.resolver"),
         )
 
+    # ── Pre-processing (Phase 1) ───────────────────────────────────────────────
+
+    def create_pre_processing_pipeline(self) -> IDocumentProcessor:
+        processors = [
+            TextSanitizer(logger=self._logger_factory("pre_processing.sanitizer")),
+            UnicodeNormalizer(logger=self._logger_factory("pre_processing.unicode")),
+            MetadataNormalizer(logger=self._logger_factory("pre_processing.metadata")),
+            SchemaMapper(logger=self._logger_factory("pre_processing.schema")),
+        ]
+        return PreProcessingPipeline(
+            processors=processors,
+            logger=self._logger_factory("pre_processing.pipeline"),
+        )
+
+    # ── Chunking ───────────────────────────────────────────────────────────────
+
     def create_text_chunker(self) -> ITextChunker:
         return RecursiveTextChunker(
             logger=self._logger_factory("chunking"),
             chunking_settings=self._settings.chunking,
         )
+
+    # ── Embeddings ─────────────────────────────────────────────────────────────
 
     def create_embedding_provider(self) -> IEmbeddingProvider:
         ollama_client = SdkClientFactory.create_ollama_client(self._settings.ollama)
@@ -81,11 +133,12 @@ class AdapterFactory:
             ingestion_settings=self._settings.ingestion,
         )
 
+    # ── Vector store ───────────────────────────────────────────────────────────
+
     def create_vector_id_strategy(self) -> IVectorIdStrategy:
         return Sha256VectorIdStrategy()
 
     def create_vector_store(self, embedding_dimension: int) -> IVectorStore:
-        """Select and build the correct vector store adapter based on VectorStoreType."""
         vst = self._vector_store_type
         id_strategy = self.create_vector_id_strategy()
         logger = self._logger_factory("vector_store")
@@ -121,6 +174,8 @@ class AdapterFactory:
 
         raise ValueError(f"Unsupported VectorStoreType: {vst}")
 
+    # ── Generation ─────────────────────────────────────────────────────────────
+
     def create_prompt_builder(self) -> IPromptBuilder:
         return DefaultPromptBuilder(
             logger=self._logger_factory("prompt_builder"),
@@ -137,6 +192,8 @@ class AdapterFactory:
             ollama_settings=self._settings.ollama,
             token_sink=token_sink,
         )
+
+    # ── Reporting ──────────────────────────────────────────────────────────────
 
     def create_eval_reporter(self, console: Console | None = None) -> IEvalReporter:
         return RichEvalReporter(console=console or Console())

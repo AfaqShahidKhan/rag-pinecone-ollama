@@ -1,9 +1,8 @@
 """
 src/factories/service_factory.py
 
-Factory that assembles application-layer services from adapters produced
-by AdapterFactory. This keeps constructor wiring out of the composition
-root's main flow and in one focused, single-responsibility class.
+Assembles application-layer services from adapters.
+Phase 1: IngestionService now receives the pre-processing pipeline.
 """
 
 from __future__ import annotations
@@ -22,7 +21,12 @@ from src.factories.adapter_factory import AdapterFactory
 
 
 class ServiceFactory:
-    def __init__(self, settings: Settings, adapter_factory: AdapterFactory, logger_factory: Callable[[str], ILogger]) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        adapter_factory: AdapterFactory,
+        logger_factory: Callable[[str], ILogger],
+    ) -> None:
         self._settings = settings
         self._adapters = adapter_factory
         self._logger_factory = logger_factory
@@ -35,6 +39,7 @@ class ServiceFactory:
             embedding_provider=embedding_provider,
             vector_store=self._adapters.create_vector_store(embedding_provider.dimension),
             logger=self._logger_factory("ingestion_service"),
+            pre_processor=self._adapters.create_pre_processing_pipeline(),  # Phase 1
         )
 
     def create_retrieval_service(self) -> RetrievalService:
@@ -46,7 +51,9 @@ class ServiceFactory:
             retrieval_settings=self._settings.retrieval,
         )
 
-    def create_rag_query_service(self, token_sink: Callable[[str], None] | None = None) -> RagQueryService:
+    def create_rag_query_service(
+        self, token_sink: Callable[[str], None] | None = None
+    ) -> RagQueryService:
         return RagQueryService(
             retrieval_service=self.create_retrieval_service(),
             prompt_builder=self._adapters.create_prompt_builder(),
@@ -54,7 +61,9 @@ class ServiceFactory:
             logger=self._logger_factory("rag_query_service"),
         )
 
-    def create_evaluation_service(self, token_sink: Callable[[str], None] | None = None) -> EvaluationService:
+    def create_evaluation_service(
+        self, token_sink: Callable[[str], None] | None = None
+    ) -> EvaluationService:
         return EvaluationService(
             rag_query_service=self.create_rag_query_service(token_sink=token_sink),
             retrieval_service=self.create_retrieval_service(),
