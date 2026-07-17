@@ -2,12 +2,13 @@
 src/factories/adapter_factory.py
 
 Abstract factory that constructs every infrastructure adapter.
-The only place in the codebase where concrete adapter classes are instantiated.
-create_vector_store() selects the correct adapter based on VectorStoreType.
+Phase 4: adds create_file_system_watcher() and create_file_ingestion_adapter()
+for the landing zone / event-driven ingestion pipeline.
 """
 
 from __future__ import annotations
 
+import os
 from typing import Callable
 
 from rich.console import Console
@@ -16,8 +17,11 @@ from src.config.settings import Settings, VectorStoreType
 from src.domain.interfaces import (
     IAnswerGenerator,
     IDocumentLoader,
+    IDocumentProcessor,
     IEmbeddingProvider,
     IEvalReporter,
+    IIngestionAdapter,
+    ILandingZoneWatcher,
     ILogger,
     IPromptBuilder,
     ITextChunker,
@@ -26,10 +30,30 @@ from src.domain.interfaces import (
 )
 from src.factories.document_loader_factory import DocumentLoaderFactory
 from src.factories.sdk_client_factory import SdkClientFactory
-from src.infrastructure.chunking import RecursiveTextChunker
+from src.infrastructure.chunking import (
+    ChunkingRoute,
+    DocumentRouter,
+    RecursiveTextChunker,
+    SemanticChunker,
+)
 from src.infrastructure.embeddings import OllamaEmbeddingProvider
 from src.infrastructure.generation import DefaultPromptBuilder, OllamaAnswerGenerator
-from src.infrastructure.loaders import DocxDocumentLoader, PdfDocumentLoader
+from src.infrastructure.landing_zone import FileIngestionAdapter, FileSystemWatcher
+from src.infrastructure.loaders import (
+    DocxDocumentLoader,
+    HtmlLoader,
+    JsonLoader,
+    OcrLoader,
+    PdfDocumentLoader,
+)
+from src.infrastructure.pre_processing import (
+    MetadataEnricher,
+    MetadataNormalizer,
+    PreProcessingPipeline,
+    SchemaMapper,
+    TextSanitizer,
+    UnicodeNormalizer,
+)
 from src.infrastructure.reporting import RichEvalReporter
 from src.infrastructure.vector_store import (
     ChromaVectorStore,
@@ -48,16 +72,21 @@ class AdapterFactory:
     ) -> None:
         self._settings = settings
         self._logger_factory = logger_factory
-        # UI override wins; falls back to whatever is in Settings
         self._vector_store_type = vector_store_type or settings.vector_store_type
 
+    # ── Document loading ───────────────────────────────────────────────────────
+
     def create_document_loaders(self) -> list[IDocumentLoader]:
+        ocr_lang = os.getenv("TESSERACT_LANG", "eng")
         return [
             PdfDocumentLoader(logger=self._logger_factory("loaders.pdf")),
             DocxDocumentLoader(
                 logger=self._logger_factory("loaders.docx"),
                 ingestion_settings=self._settings.ingestion,
             ),
+            HtmlLoader(logger=self._logger_factory("loaders.html")),
+            JsonLoader(logger=self._logger_factory("loaders.json")),
+            OcrLoader(logger=self._logger_factory("loaders.ocr"), lang=ocr_lang),
         ]
 
     def create_document_loader_resolver(self) -> DocumentLoaderFactory:
@@ -66,11 +95,54 @@ class AdapterFactory:
             logger=self._logger_factory("loaders.resolver"),
         )
 
+    # ── Pre-processing ─────────────────────────────────────────────────────────
+
+    def create_pre_processing_pipeline(self) -> IDocumentProcessor:
+        processors = [
+            TextSanitizer(logger=self._logger_factory("pre_processing.sanitizer")),
+            UnicodeNormalizer(logger=self._logger_factory("pre_processing.unicode")),
+            MetadataNormalizer(logger=self._logger_factory("pre_processing.metadata")),
+            SchemaMapper(logger=self._logger_factory("pre_processing.schema")),
+            MetadataEnricher(logger=self._logger_factory("pre_processing.enricher")),
+        ]
+        return PreProcessingPipeline(
+            processors=processors,
+            logger=self._logger_factory("pre_processing.pipeline"),
+        )
+
+    # ── Chunking ───────────────────────────────────────────────────────────────
+
     def create_text_chunker(self) -> ITextChunker:
-        return RecursiveTextChunker(
-            logger=self._logger_factory("chunking"),
+        recursive_chunker = RecursiveTextChunker(
+            logger=self._logger_factory("chunking.recursive"),
             chunking_settings=self._settings.chunking,
         )
+        ollama_client = SdkClientFactory.create_ollama_client(self._settings.ollama)
+        embedding_provider = OllamaEmbeddingProvider(
+            client=ollama_client,
+            logger=self._logger_factory("chunking.semantic.embedder"),
+            ollama_settings=self._settings.ollama,
+            ingestion_settings=self._settings.ingestion,
+        )
+        semantic_chunker = SemanticChunker(
+            embedding_provider=embedding_provider,
+            logger=self._logger_factory("chunking.semantic"),
+            semantic_settings=self._settings.semantic_chunking,
+        )
+        routes = [
+            ChunkingRoute(
+                name="semantic",
+                file_types=frozenset({"html", "json"}),
+                chunker=semantic_chunker,
+            ),
+        ]
+        return DocumentRouter(
+            routes=routes,
+            default_chunker=recursive_chunker,
+            logger=self._logger_factory("chunking.router"),
+        )
+
+    # ── Embeddings ─────────────────────────────────────────────────────────────
 
     def create_embedding_provider(self) -> IEmbeddingProvider:
         ollama_client = SdkClientFactory.create_ollama_client(self._settings.ollama)
@@ -81,11 +153,12 @@ class AdapterFactory:
             ingestion_settings=self._settings.ingestion,
         )
 
+    # ── Vector store ───────────────────────────────────────────────────────────
+
     def create_vector_id_strategy(self) -> IVectorIdStrategy:
         return Sha256VectorIdStrategy()
 
     def create_vector_store(self, embedding_dimension: int) -> IVectorStore:
-        """Select and build the correct vector store adapter based on VectorStoreType."""
         vst = self._vector_store_type
         id_strategy = self.create_vector_id_strategy()
         logger = self._logger_factory("vector_store")
@@ -100,7 +173,6 @@ class AdapterFactory:
                 ingestion_settings=self._settings.ingestion,
                 embedding_dimension=embedding_dimension,
             )
-
         if vst == VectorStoreType.CHROMA:
             return ChromaVectorStore(
                 id_strategy=id_strategy,
@@ -109,7 +181,6 @@ class AdapterFactory:
                 ingestion_settings=self._settings.ingestion,
                 embedding_dimension=embedding_dimension,
             )
-
         if vst == VectorStoreType.QDRANT:
             return QdrantVectorStore(
                 id_strategy=id_strategy,
@@ -118,8 +189,9 @@ class AdapterFactory:
                 ingestion_settings=self._settings.ingestion,
                 embedding_dimension=embedding_dimension,
             )
-
         raise ValueError(f"Unsupported VectorStoreType: {vst}")
+
+    # ── Generation ─────────────────────────────────────────────────────────────
 
     def create_prompt_builder(self) -> IPromptBuilder:
         return DefaultPromptBuilder(
@@ -138,5 +210,26 @@ class AdapterFactory:
             token_sink=token_sink,
         )
 
+    # ── Reporting ──────────────────────────────────────────────────────────────
+
     def create_eval_reporter(self, console: Console | None = None) -> IEvalReporter:
         return RichEvalReporter(console=console or Console())
+
+    # ── Landing zone (Phase 4) ─────────────────────────────────────────────────
+
+    def create_file_ingestion_adapter(
+        self, streaming_service
+    ) -> IIngestionAdapter:
+        return FileIngestionAdapter(
+            ingestion_service=streaming_service,
+            logger=self._logger_factory("landing_zone.adapter"),
+        )
+
+    def create_file_system_watcher(
+        self, adapter: IIngestionAdapter, recursive: bool = False
+    ) -> ILandingZoneWatcher:
+        return FileSystemWatcher(
+            adapter=adapter,
+            logger=self._logger_factory("landing_zone.watcher"),
+            recursive=recursive,
+        )

@@ -2,8 +2,7 @@
 src/composition/container.py
 
 Composition root. The only module allowed to call factories.
-Accepts an optional vector_store_type override so the Streamlit UI
-can switch databases without restarting the process.
+Phase 4: exposes watcher and streaming_ingestion_service.
 """
 
 from __future__ import annotations
@@ -11,9 +10,14 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Callable
 
-from src.application.services import EvaluationService, IngestionService, RagQueryService
+from src.application.services import (
+    EvaluationService,
+    IngestionService,
+    RagQueryService,
+    StreamingIngestionService,
+)
 from src.config.settings import Settings, VectorStoreType
-from src.domain.interfaces import ILogger
+from src.domain.interfaces import ILandingZoneWatcher, ILogger
 from src.factories import AdapterFactory, LoggerFactory, ServiceFactory, SettingsFactory
 
 
@@ -28,8 +32,10 @@ class Container:
         self._services = service_factory
         self._token_sink = token_sink
         self._ingestion_service: IngestionService | None = None
+        self._streaming_ingestion_service: StreamingIngestionService | None = None
         self._rag_query_service: RagQueryService | None = None
         self._evaluation_service: EvaluationService | None = None
+        self._watcher: ILandingZoneWatcher | None = None
 
     @classmethod
     def bootstrap(
@@ -39,11 +45,9 @@ class Container:
         vector_store_type: VectorStoreType | None = None,
     ) -> "Container":
         root = project_root or Path.cwd()
-
         settings = SettingsFactory(project_root=root).create(
             vector_store_type=vector_store_type
         )
-
         logger_factory: Callable[[str], ILogger] = LoggerFactory.create
         adapter_factory = AdapterFactory(
             settings=settings,
@@ -55,7 +59,6 @@ class Container:
             adapter_factory=adapter_factory,
             logger_factory=logger_factory,
         )
-
         return cls(settings=settings, service_factory=service_factory, token_sink=token_sink)
 
     @property
@@ -67,6 +70,12 @@ class Container:
         if self._ingestion_service is None:
             self._ingestion_service = self._services.create_ingestion_service()
         return self._ingestion_service
+
+    @property
+    def streaming_ingestion_service(self) -> StreamingIngestionService:
+        if self._streaming_ingestion_service is None:
+            self._streaming_ingestion_service = self._services.create_streaming_ingestion_service()
+        return self._streaming_ingestion_service
 
     @property
     def rag_query_service(self) -> RagQueryService:
@@ -83,3 +92,9 @@ class Container:
                 token_sink=self._token_sink
             )
         return self._evaluation_service
+
+    @property
+    def watcher(self) -> ILandingZoneWatcher:
+        if self._watcher is None:
+            self._watcher = self._services.create_landing_zone_watcher()
+        return self._watcher

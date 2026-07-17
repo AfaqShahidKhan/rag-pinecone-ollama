@@ -38,13 +38,12 @@ class ChromaSettings:
 
 @dataclass(frozen=True)
 class QdrantSettings:
-    # url=None → local on-disk mode (no server required)
     url: str | None = None
     path: str = "./data/qdrant"
     collection_name: str = "rag-collection"
 
 
-# ── Other settings ───────────────────────────────────────────────────────────
+# ── Model settings ────────────────────────────────────────────────────────────
 
 @dataclass(frozen=True)
 class OllamaSettings:
@@ -54,11 +53,32 @@ class OllamaSettings:
     embedding_dimension: int = 768
 
 
+# ── Chunking settings ─────────────────────────────────────────────────────────
+
 @dataclass(frozen=True)
 class ChunkingSettings:
     chunk_size: int = 512
     chunk_overlap: int = 64
 
+
+@dataclass(frozen=True)
+class SemanticChunkingSettings:
+    """
+    Settings for SemanticChunker (Phase 3).
+
+    similarity_threshold:    Cosine similarity below which a sentence
+                             boundary becomes a chunk boundary.
+                             Lower = fewer, larger chunks.
+                             Higher = more, smaller chunks.
+    min_sentences_per_chunk: Prevents micro-chunks from very short segments.
+    max_sentences_per_chunk: Hard ceiling to prevent runaway chunk sizes.
+    """
+    similarity_threshold: float = 0.75
+    min_sentences_per_chunk: int = 2
+    max_sentences_per_chunk: int = 15
+
+
+# ── Other settings ────────────────────────────────────────────────────────────
 
 @dataclass(frozen=True)
 class RetrievalSettings:
@@ -92,13 +112,14 @@ class IngestionSettings:
     docx_pseudo_page_chars: int = 3000
 
 
-# ── Root settings object ─────────────────────────────────────────────────────
+# ── Root settings object ──────────────────────────────────────────────────────
 
 @dataclass(frozen=True)
 class Settings:
     pinecone: PineconeSettings
     ollama: OllamaSettings = field(default_factory=OllamaSettings)
     chunking: ChunkingSettings = field(default_factory=ChunkingSettings)
+    semantic_chunking: SemanticChunkingSettings = field(default_factory=SemanticChunkingSettings)
     retrieval: RetrievalSettings = field(default_factory=RetrievalSettings)
     prompt: PromptSettings = field(default_factory=PromptSettings)
     ingestion: IngestionSettings = field(default_factory=IngestionSettings)

@@ -7,6 +7,8 @@ from .vector_store import IVectorStore, IVectorIdStrategy
 from .prompt_builder import IPromptBuilder
 from .answer_generator import IAnswerGenerator
 from .eval_reporter import IEvalReporter
+from .pre_processor import IPreProcessor, IDocumentProcessor
+from .landing_zone import ILandingZoneWatcher, IIngestionAdapter
 
 __all__ = [
     "ILogger",
@@ -19,4 +21,8 @@ __all__ = [
     "IPromptBuilder",
     "IAnswerGenerator",
     "IEvalReporter",
+    "IPreProcessor",
+    "IDocumentProcessor",
+    "ILandingZoneWatcher",
+    "IIngestionAdapter",
 ]
