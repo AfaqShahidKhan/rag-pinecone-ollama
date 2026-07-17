@@ -1,6 +1,9 @@
 from .settings import (
     Settings,
+    VectorStoreType,
     PineconeSettings,
+    ChromaSettings,
+    QdrantSettings,
     OllamaSettings,
     ChunkingSettings,
     RetrievalSettings,
@@ -10,7 +13,10 @@ from .settings import (
 
 __all__ = [
     "Settings",
+    "VectorStoreType",
     "PineconeSettings",
+    "ChromaSettings",
+    "QdrantSettings",
     "OllamaSettings",
     "ChunkingSettings",
     "RetrievalSettings",
