@@ -2,7 +2,7 @@
 src/factories/service_factory.py
 
 Assembles application-layer services from adapters.
-Phase 1: IngestionService now receives the pre-processing pipeline.
+Phase 4: adds create_streaming_ingestion_service() and create_landing_zone_watcher().
 """
 
 from __future__ import annotations
@@ -14,9 +14,10 @@ from src.application.services import (
     IngestionService,
     RagQueryService,
     RetrievalService,
+    StreamingIngestionService,
 )
 from src.config.settings import Settings
-from src.domain.interfaces import ILogger
+from src.domain.interfaces import ILandingZoneWatcher, ILogger
 from src.factories.adapter_factory import AdapterFactory
 
 
@@ -39,7 +40,32 @@ class ServiceFactory:
             embedding_provider=embedding_provider,
             vector_store=self._adapters.create_vector_store(embedding_provider.dimension),
             logger=self._logger_factory("ingestion_service"),
-            pre_processor=self._adapters.create_pre_processing_pipeline(),  # Phase 1
+            pre_processor=self._adapters.create_pre_processing_pipeline(),
+        )
+
+    def create_streaming_ingestion_service(self) -> StreamingIngestionService:
+        """
+        File-at-a-time ingestion service used by the landing zone watcher.
+        Shares the same adapters as IngestionService but processes each
+        file independently to keep peak memory proportional to one file.
+        """
+        embedding_provider = self._adapters.create_embedding_provider()
+        return StreamingIngestionService(
+            loader_resolver=self._adapters.create_document_loader_resolver(),
+            chunker=self._adapters.create_text_chunker(),
+            embedding_provider=embedding_provider,
+            vector_store=self._adapters.create_vector_store(embedding_provider.dimension),
+            logger=self._logger_factory("streaming_ingestion_service"),
+            pre_processor=self._adapters.create_pre_processing_pipeline(),
+        )
+
+    def create_landing_zone_watcher(self, recursive: bool = False) -> ILandingZoneWatcher:
+        """Wire: StreamingIngestionService → FileIngestionAdapter → FileSystemWatcher."""
+        streaming_service = self.create_streaming_ingestion_service()
+        adapter = self._adapters.create_file_ingestion_adapter(streaming_service)
+        return self._adapters.create_file_system_watcher(
+            adapter=adapter,
+            recursive=recursive,
         )
 
     def create_retrieval_service(self) -> RetrievalService:

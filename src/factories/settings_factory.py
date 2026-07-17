@@ -2,6 +2,7 @@
 src/factories/settings_factory.py
 
 The only module allowed to read os.environ. Builds a fully frozen Settings object.
+Phase 3: reads SemanticChunkingSettings env vars.
 """
 
 from __future__ import annotations
@@ -20,6 +21,7 @@ from src.config.settings import (
     PromptSettings,
     QdrantSettings,
     RetrievalSettings,
+    SemanticChunkingSettings,
     Settings,
     VectorStoreType,
 )
@@ -54,6 +56,17 @@ class SettingsFactory:
                 chunk_size=int(self._optional("CHUNK_SIZE", "512")),
                 chunk_overlap=int(self._optional("CHUNK_OVERLAP", "64")),
             ),
+            semantic_chunking=SemanticChunkingSettings(
+                similarity_threshold=float(
+                    self._optional("SEMANTIC_SIMILARITY_THRESHOLD", "0.75")
+                ),
+                min_sentences_per_chunk=int(
+                    self._optional("SEMANTIC_MIN_SENTENCES", "2")
+                ),
+                max_sentences_per_chunk=int(
+                    self._optional("SEMANTIC_MAX_SENTENCES", "15")
+                ),
+            ),
             retrieval=RetrievalSettings(
                 top_k=int(self._optional("RETRIEVAL_TOP_K", "5")),
             ),
@@ -71,7 +84,7 @@ class SettingsFactory:
                 collection_name=self._optional("CHROMA_COLLECTION", "rag-collection"),
             ),
             qdrant=QdrantSettings(
-                url=os.getenv("QDRANT_URL"),   # None if unset = local mode
+                url=os.getenv("QDRANT_URL"),
                 path=self._optional("QDRANT_PATH", "./data/qdrant"),
                 collection_name=self._optional("QDRANT_COLLECTION", "rag-collection"),
             ),
