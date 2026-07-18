@@ -2,8 +2,8 @@
 src/factories/adapter_factory.py
 
 Abstract factory that constructs every infrastructure adapter.
-Phase 4: adds create_file_system_watcher() and create_file_ingestion_adapter()
-for the landing zone / event-driven ingestion pipeline.
+Phase 5: adds create_pii_pre_processor() and create_relational_store().
+The pre-processing pipeline now conditionally includes PII redaction.
 """
 
 from __future__ import annotations
@@ -24,6 +24,7 @@ from src.domain.interfaces import (
     ILandingZoneWatcher,
     ILogger,
     IPromptBuilder,
+    IRelationalStore,
     ITextChunker,
     IVectorIdStrategy,
     IVectorStore,
@@ -46,14 +47,17 @@ from src.infrastructure.loaders import (
     OcrLoader,
     PdfDocumentLoader,
 )
+from src.infrastructure.pii import RegexPiiAnonymizer
 from src.infrastructure.pre_processing import (
     MetadataEnricher,
     MetadataNormalizer,
+    PiiAnonymizingPreProcessor,
     PreProcessingPipeline,
     SchemaMapper,
     TextSanitizer,
     UnicodeNormalizer,
 )
+from src.infrastructure.relational_store import SqliteRelationalStore
 from src.infrastructure.reporting import RichEvalReporter
 from src.infrastructure.vector_store import (
     ChromaVectorStore,
@@ -95,9 +99,14 @@ class AdapterFactory:
             logger=self._logger_factory("loaders.resolver"),
         )
 
-    # ── Pre-processing ─────────────────────────────────────────────────────────
+    # ── Pre-processing (Phase 1 + 3 + 5) ──────────────────────────────────────
 
     def create_pre_processing_pipeline(self) -> IDocumentProcessor:
+        """
+        Full pre-processing chain:
+          TextSanitizer → UnicodeNormalizer → MetadataNormalizer
+          → SchemaMapper → MetadataEnricher → [PiiAnonymizer if enabled]
+        """
         processors = [
             TextSanitizer(logger=self._logger_factory("pre_processing.sanitizer")),
             UnicodeNormalizer(logger=self._logger_factory("pre_processing.unicode")),
@@ -105,6 +114,21 @@ class AdapterFactory:
             SchemaMapper(logger=self._logger_factory("pre_processing.schema")),
             MetadataEnricher(logger=self._logger_factory("pre_processing.enricher")),
         ]
+
+        # Conditionally add PII anonymizer (Phase 5)
+        if self._settings.pii.enabled:
+            enabled_types = list(self._settings.pii.enabled_types) or None
+            anonymizer = RegexPiiAnonymizer(
+                logger=self._logger_factory("pii.anonymizer"),
+                enabled_types=enabled_types,
+            )
+            processors.append(
+                PiiAnonymizingPreProcessor(
+                    anonymizer=anonymizer,
+                    logger=self._logger_factory("pre_processing.pii"),
+                )
+            )
+
         return PreProcessingPipeline(
             processors=processors,
             logger=self._logger_factory("pre_processing.pipeline"),
@@ -191,6 +215,17 @@ class AdapterFactory:
             )
         raise ValueError(f"Unsupported VectorStoreType: {vst}")
 
+    # ── Relational store (Phase 5) ─────────────────────────────────────────────
+
+    def create_relational_store(self) -> IRelationalStore | None:
+        """Returns None when RELATIONAL_STORE_ENABLED=false in .env."""
+        if not self._settings.relational_store.enabled:
+            return None
+        return SqliteRelationalStore(
+            logger=self._logger_factory("relational_store"),
+            settings=self._settings.relational_store,
+        )
+
     # ── Generation ─────────────────────────────────────────────────────────────
 
     def create_prompt_builder(self) -> IPromptBuilder:
@@ -215,11 +250,9 @@ class AdapterFactory:
     def create_eval_reporter(self, console: Console | None = None) -> IEvalReporter:
         return RichEvalReporter(console=console or Console())
 
-    # ── Landing zone (Phase 4) ─────────────────────────────────────────────────
+    # ── Landing zone ───────────────────────────────────────────────────────────
 
-    def create_file_ingestion_adapter(
-        self, streaming_service
-    ) -> IIngestionAdapter:
+    def create_file_ingestion_adapter(self, streaming_service) -> IIngestionAdapter:
         return FileIngestionAdapter(
             ingestion_service=streaming_service,
             logger=self._logger_factory("landing_zone.adapter"),

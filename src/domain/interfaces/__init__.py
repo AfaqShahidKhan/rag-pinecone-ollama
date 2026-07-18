@@ -9,6 +9,8 @@ from .answer_generator import IAnswerGenerator
 from .eval_reporter import IEvalReporter
 from .pre_processor import IPreProcessor, IDocumentProcessor
 from .landing_zone import ILandingZoneWatcher, IIngestionAdapter
+from .pii_anonymizer import IPiiAnonymizer, RedactionResult
+from .relational_store import IRelationalStore
 
 __all__ = [
     "ILogger",
@@ -25,4 +27,7 @@ __all__ = [
     "IDocumentProcessor",
     "ILandingZoneWatcher",
     "IIngestionAdapter",
+    "IPiiAnonymizer",
+    "RedactionResult",
+    "IRelationalStore",
 ]

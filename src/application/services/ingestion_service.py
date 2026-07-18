@@ -2,12 +2,10 @@
 src/application/services/ingestion_service.py
 
 Orchestrates the ingestion pipeline:
-    load → pre_process → chunk → embed → upsert
+    load → pre_process → chunk → embed → upsert → [save to relational store]
 
-The only change from the original is the addition of the optional
-IDocumentProcessor step between load and chunk. When no pre-processor
-is injected (pre_processor=None), the pipeline behaves exactly as before
-— fully backward compatible.
+Phase 5: optionally persists embedded chunks to the relational store
+after the vector store upsert, enabling parent-child retrieval.
 """
 
 from __future__ import annotations
@@ -20,7 +18,9 @@ from src.domain.interfaces import (
     IDocumentProcessor,
     IEmbeddingProvider,
     ILogger,
+    IRelationalStore,
     ITextChunker,
+    IVectorIdStrategy,
     IVectorStore,
 )
 
@@ -34,6 +34,8 @@ class IngestionService:
         vector_store: IVectorStore,
         logger: ILogger,
         pre_processor: IDocumentProcessor | None = None,
+        relational_store: IRelationalStore | None = None,
+        id_strategy: IVectorIdStrategy | None = None,
     ) -> None:
         self._loader_resolver = loader_resolver
         self._chunker = chunker
@@ -41,12 +43,10 @@ class IngestionService:
         self._vector_store = vector_store
         self._logger = logger
         self._pre_processor = pre_processor
+        self._relational_store = relational_store
+        self._id_strategy = id_strategy
 
     def ingest_path(self, source: Path) -> int:
-        """
-        Ingest a single file or every supported file in a directory.
-        Returns the number of vectors upserted.
-        """
         documents = self._load(source)
         documents = self._pre_process(documents)
         chunks = self._chunker.chunk(documents)
@@ -54,6 +54,12 @@ class IngestionService:
 
         self._vector_store.ensure_index_exists()
         total = self._vector_store.upsert(embedded_chunks)
+
+        # Phase 5: persist to relational store if enabled
+        if self._relational_store and self._id_strategy:
+            self._relational_store.ensure_schema()
+            vector_ids = [self._id_strategy.generate_id(c) for c in embedded_chunks]
+            self._relational_store.save_chunks(embedded_chunks, vector_ids)
 
         self._logger.info(
             f"Pipeline complete — {total} vectors indexed from '{source.name}'."
