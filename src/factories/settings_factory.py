@@ -2,7 +2,7 @@
 src/factories/settings_factory.py
 
 The only module allowed to read os.environ. Builds a fully frozen Settings object.
-Phase 3: reads SemanticChunkingSettings env vars.
+Phase 5: reads PiiSettings and RelationalStoreSettings env vars.
 """
 
 from __future__ import annotations
@@ -18,8 +18,10 @@ from src.config.settings import (
     IngestionSettings,
     OllamaSettings,
     PineconeSettings,
+    PiiSettings,
     PromptSettings,
     QdrantSettings,
+    RelationalStoreSettings,
     RetrievalSettings,
     SemanticChunkingSettings,
     Settings,
@@ -38,6 +40,10 @@ class SettingsFactory:
         store_type = vector_store_type or VectorStoreType(
             self._optional("VECTOR_STORE_TYPE", VectorStoreType.PINECONE.value)
         )
+
+        # PII enabled_types: comma-separated env var, e.g. "EMAIL,PHONE_PK,CNIC"
+        pii_types_raw = self._optional("PII_ENABLED_TYPES", "")
+        pii_types = tuple(t.strip() for t in pii_types_raw.split(",") if t.strip())
 
         return Settings(
             pinecone=PineconeSettings(
@@ -88,6 +94,14 @@ class SettingsFactory:
                 path=self._optional("QDRANT_PATH", "./data/qdrant"),
                 collection_name=self._optional("QDRANT_COLLECTION", "rag-collection"),
             ),
+            pii=PiiSettings(
+                enabled=self._optional("PII_ENABLED", "true").lower() == "true",
+                enabled_types=pii_types,
+            ),
+            relational_store=RelationalStoreSettings(
+                enabled=self._optional("RELATIONAL_STORE_ENABLED", "true").lower() == "true",
+                db_path=self._optional("RELATIONAL_STORE_DB_PATH", "./data/relational/rag_chunks.db"),
+            ),
             vector_store_type=store_type,
             project_root=self._project_root,
         )
@@ -97,8 +111,7 @@ class SettingsFactory:
         value = os.getenv(key)
         if not value:
             raise EnvironmentError(
-                f"Required environment variable '{key}' is not set. "
-                "Copy .env.example -> .env and fill in the values."
+                f"Required environment variable '{key}' is not set."
             )
         return value
 

@@ -2,7 +2,6 @@
 src/config/settings.py
 
 Pure configuration value objects. No module-level singleton instance.
-Built once in the composition root via SettingsFactory, injected everywhere.
 """
 
 from __future__ import annotations
@@ -12,15 +11,11 @@ from enum import Enum
 from pathlib import Path
 
 
-# ── Vector store selector ────────────────────────────────────────────────────
-
 class VectorStoreType(str, Enum):
     PINECONE = "pinecone"
     CHROMA   = "chroma"
     QDRANT   = "qdrant"
 
-
-# ── Per-database settings ────────────────────────────────────────────────────
 
 @dataclass(frozen=True)
 class PineconeSettings:
@@ -43,8 +38,6 @@ class QdrantSettings:
     collection_name: str = "rag-collection"
 
 
-# ── Model settings ────────────────────────────────────────────────────────────
-
 @dataclass(frozen=True)
 class OllamaSettings:
     base_url: str = "http://localhost:11434"
@@ -52,8 +45,6 @@ class OllamaSettings:
     generation_model: str = "gemma3"
     embedding_dimension: int = 768
 
-
-# ── Chunking settings ─────────────────────────────────────────────────────────
 
 @dataclass(frozen=True)
 class ChunkingSettings:
@@ -63,22 +54,10 @@ class ChunkingSettings:
 
 @dataclass(frozen=True)
 class SemanticChunkingSettings:
-    """
-    Settings for SemanticChunker (Phase 3).
-
-    similarity_threshold:    Cosine similarity below which a sentence
-                             boundary becomes a chunk boundary.
-                             Lower = fewer, larger chunks.
-                             Higher = more, smaller chunks.
-    min_sentences_per_chunk: Prevents micro-chunks from very short segments.
-    max_sentences_per_chunk: Hard ceiling to prevent runaway chunk sizes.
-    """
     similarity_threshold: float = 0.75
     min_sentences_per_chunk: int = 2
     max_sentences_per_chunk: int = 15
 
-
-# ── Other settings ────────────────────────────────────────────────────────────
 
 @dataclass(frozen=True)
 class RetrievalSettings:
@@ -112,7 +91,31 @@ class IngestionSettings:
     docx_pseudo_page_chars: int = 3000
 
 
-# ── Root settings object ──────────────────────────────────────────────────────
+@dataclass(frozen=True)
+class PiiSettings:
+    """
+    Controls PII anonymization in the pre-processing pipeline.
+
+    enabled:          Set to False to skip PII redaction entirely.
+    enabled_types:    Whitelist of entity labels to redact. Empty list = all types.
+                      Supported: EMAIL, URL, CNIC, IBAN, CREDIT_CARD,
+                                 PHONE_PK, PHONE_INTL, IP_ADDRESS, DATE_OF_BIRTH
+    """
+    enabled: bool = True
+    enabled_types: tuple[str, ...] = ()   # empty = all types active
+
+
+@dataclass(frozen=True)
+class RelationalStoreSettings:
+    """
+    Controls the SQLite relational store for chunk persistence.
+
+    enabled:  Set to False to skip relational store writes.
+    db_path:  Path to the SQLite database file.
+    """
+    enabled: bool = True
+    db_path: str = "./data/relational/rag_chunks.db"
+
 
 @dataclass(frozen=True)
 class Settings:
@@ -125,6 +128,8 @@ class Settings:
     ingestion: IngestionSettings = field(default_factory=IngestionSettings)
     chroma: ChromaSettings = field(default_factory=ChromaSettings)
     qdrant: QdrantSettings = field(default_factory=QdrantSettings)
+    pii: PiiSettings = field(default_factory=PiiSettings)
+    relational_store: RelationalStoreSettings = field(default_factory=RelationalStoreSettings)
     vector_store_type: VectorStoreType = VectorStoreType.PINECONE
     project_root: Path = field(default_factory=Path.cwd)
 

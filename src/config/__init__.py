@@ -10,6 +10,8 @@ from .settings import (
     RetrievalSettings,
     PromptSettings,
     IngestionSettings,
+    PiiSettings,
+    RelationalStoreSettings,
 )
 
 __all__ = [
@@ -24,4 +26,6 @@ __all__ = [
     "RetrievalSettings",
     "PromptSettings",
     "IngestionSettings",
+    "PiiSettings",
+    "RelationalStoreSettings",
 ]
