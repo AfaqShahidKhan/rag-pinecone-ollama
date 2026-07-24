@@ -74,7 +74,7 @@ class DocxDocumentLoader(IDocumentLoader):
     def _extract_blocks(self, docx_file: DocxFile) -> list[str]:
         """
         Extract all text blocks (paragraphs and tables) in document order.
-        Uses the raw XML body to preserve ordering between paragraphs and tables.
+        Uses the landing_zone XML body to preserve ordering between paragraphs and tables.
         """
         blocks: list[str] = []
         body = docx_file.element.body

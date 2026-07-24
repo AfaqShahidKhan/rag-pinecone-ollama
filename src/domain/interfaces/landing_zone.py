@@ -19,7 +19,7 @@ from pathlib import Path
 
 
 class IIngestionAdapter(ABC):
-    """Converts a raw file-system event into an internal ingestion call."""
+    """Converts a landing_zone file-system event into an internal ingestion call."""
 
     @abstractmethod
     def on_file_arrived(self, path: Path) -> None:

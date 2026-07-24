@@ -35,7 +35,7 @@ cp .env.example .env
 # Edit .env — fill in PINECONE_API_KEY if using Pinecone
 
 # 5. Add your documents
-# Place PDF or DOCX files inside data/raw/
+# Place PDF or DOCX files inside data/landing_zone/
 
 # 6a. Run the Streamlit UI
 streamlit run app.py
@@ -144,7 +144,7 @@ src/
   factories/                 # The ONLY place concrete adapters/services are instantiated.
     settings_factory.py       - reads env vars -> Settings
     logger_factory.py         - ILogger instances
-    sdk_client_factory.py     - builds raw Pinecone/Ollama SDK client objects
+    sdk_client_factory.py     - builds landing_zone Pinecone/Ollama SDK client objects
     document_loader_factory.py - abstract factory: resolves IDocumentLoader by file extension
     adapter_factory.py        - abstract factory: builds every infrastructure adapter,
                                 routes create_vector_store() by VectorStoreType

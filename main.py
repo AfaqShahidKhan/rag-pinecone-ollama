@@ -28,7 +28,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     ingest_parser = subparsers.add_parser("ingest", help="Ingest documents into the vector store")
     ingest_parser.add_argument(
         "source", nargs="?", default=None,
-        help="Path to a file or directory. Defaults to <project_root>/data/raw.",
+        help="Path to a file or directory. Defaults to <project_root>/data/landing_zone.",
     )
 
     # ask
@@ -53,7 +53,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
     watch_parser.add_argument(
         "source", nargs="?", default=None,
-        help="Directory to watch. Defaults to <project_root>/data/raw.",
+        help="Directory to watch. Defaults to <project_root>/data/landing_zone.",
     )
     watch_parser.add_argument(
         "--recursive", action="store_true",

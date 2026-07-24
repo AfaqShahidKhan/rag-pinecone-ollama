@@ -4,7 +4,7 @@ venv/
 __pycache__/
 *.pyc
 .DS_Store
-data/raw/
+data/landing_zone/
 data/chroma/
 data/qdrant/
 .streamlit/
