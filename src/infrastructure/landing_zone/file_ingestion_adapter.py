@@ -4,7 +4,7 @@ src/infrastructure/landing_zone/file_ingestion_adapter.py
 IIngestionAdapter adapter that receives a file path from the watcher and
 delegates to StreamingIngestionService for single-file processing.
 
-Single responsibility: translate a raw file path into a structured,
+Single responsibility: translate a landing_zone file path into a structured,
 logged ingestion call. It does not know about OS events, watchdog,
 or chunking — those concerns belong to other layers.
 """

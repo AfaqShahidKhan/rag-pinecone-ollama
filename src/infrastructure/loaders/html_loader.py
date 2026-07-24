@@ -132,8 +132,8 @@ class HtmlLoader(IDocumentLoader):
         total_sections: int,
         path: Path,
     ) -> Document | None:
-        raw = "\n".join(lines)
-        text = _MULTI_BLANK_RE.sub("\n\n", _MULTI_SPACE_RE.sub(" ", raw)).strip()
+        landing_zone = "\n".join(lines)
+        text = _MULTI_BLANK_RE.sub("\n\n", _MULTI_SPACE_RE.sub(" ", landing_zone)).strip()
         if not text:
             return None
         return Document(

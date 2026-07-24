@@ -72,7 +72,7 @@ class PromptSettings:
         "Answer the user's question using ONLY the information in the context "
         "provided below.\n"
         "Follow these rules strictly:\n"
-        "- Write a clear, complete answer in your own words — do NOT copy raw "
+        "- Write a clear, complete answer in your own words — do NOT copy landing_zone "
         "text from the context\n"
         "- Use 2-3 sentences unless the answer is a simple fact\n"
         "- If the answer requires explaining a reason or motivation, explain it fully\n"
@@ -135,7 +135,7 @@ class Settings:
 
     @property
     def data_raw(self) -> Path:
-        return self.project_root / "data" / "raw"
+        return self.project_root / "data" / "landing_zone"
 
     @property
     def data_processed(self) -> Path:

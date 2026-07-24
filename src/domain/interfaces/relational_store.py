@@ -1,7 +1,7 @@
 """
 src/domain/interfaces/relational_store.py
 
-Port for a relational/document store that persists raw chunk text and
+Port for a relational/document store that persists landing_zone chunk text and
 metadata alongside the vector store. Enables the Parent-Child Retrieval
 pattern: the vector store holds dense embeddings for fast similarity
 search, while the relational store holds the full original text for
