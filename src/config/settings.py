@@ -118,6 +118,23 @@ class RelationalStoreSettings:
 
 
 @dataclass(frozen=True)
+class CorpusSettings:
+    """
+    Controls the human-readable Markdown corpus writer.
+
+    Runs after pre-processing (clean, PII-redacted text) and before chunking,
+    so the corpus always reflects exactly what feeds the chunker — regardless
+    of chunk size, chunking strategy, or vector store choice.
+
+    enabled:     Set to False to skip corpus writing entirely.
+    output_dir:  Root directory. Each source document gets its own subfolder
+                 containing one Markdown file per page/section.
+    """
+    enabled: bool = True
+    output_dir: str = "./data/corpus"
+
+
+@dataclass(frozen=True)
 class Settings:
     pinecone: PineconeSettings
     ollama: OllamaSettings = field(default_factory=OllamaSettings)
@@ -130,6 +147,7 @@ class Settings:
     qdrant: QdrantSettings = field(default_factory=QdrantSettings)
     pii: PiiSettings = field(default_factory=PiiSettings)
     relational_store: RelationalStoreSettings = field(default_factory=RelationalStoreSettings)
+    corpus: CorpusSettings = field(default_factory=CorpusSettings)
     vector_store_type: VectorStoreType = VectorStoreType.PINECONE
     project_root: Path = field(default_factory=Path.cwd)
 

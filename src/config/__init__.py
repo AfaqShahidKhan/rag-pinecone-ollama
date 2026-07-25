@@ -12,6 +12,7 @@ from .settings import (
     IngestionSettings,
     PiiSettings,
     RelationalStoreSettings,
+    CorpusSettings,
 )
 
 __all__ = [
@@ -28,4 +29,5 @@ __all__ = [
     "IngestionSettings",
     "PiiSettings",
     "RelationalStoreSettings",
+    "CorpusSettings",
 ]

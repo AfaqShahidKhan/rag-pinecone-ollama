@@ -3,6 +3,7 @@ src/factories/settings_factory.py
 
 The only module allowed to read os.environ. Builds a fully frozen Settings object.
 Phase 5: reads PiiSettings and RelationalStoreSettings env vars.
+Corpus step: reads CorpusSettings env vars.
 """
 
 from __future__ import annotations
@@ -15,6 +16,7 @@ from dotenv import load_dotenv
 from src.config.settings import (
     ChunkingSettings,
     ChromaSettings,
+    CorpusSettings,
     IngestionSettings,
     OllamaSettings,
     PineconeSettings,
@@ -101,6 +103,10 @@ class SettingsFactory:
             relational_store=RelationalStoreSettings(
                 enabled=self._optional("RELATIONAL_STORE_ENABLED", "true").lower() == "true",
                 db_path=self._optional("RELATIONAL_STORE_DB_PATH", "./data/relational/rag_chunks.db"),
+            ),
+            corpus=CorpusSettings(
+                enabled=self._optional("CORPUS_WRITER_ENABLED", "true").lower() == "true",
+                output_dir=self._optional("CORPUS_OUTPUT_DIR", "./data/corpus"),
             ),
             vector_store_type=store_type,
             project_root=self._project_root,
