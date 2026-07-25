@@ -51,10 +51,20 @@ class Container:
         project_root: Path | None = None,
         token_sink: Callable[[str], None] | None = None,
         vector_store_type: VectorStoreType | None = None,
+        config_file: str | Path | None = None,
     ) -> "Container":
+        """
+        config_file: optional path (relative to project_root, or absolute)
+                     to a per-user YAML config, e.g. "config/user_afaq.yml".
+                     Values there override config/default.yml, which in turn
+                     overrides .env / dataclass defaults. Lets the same RAG
+                     pipeline serve multiple users, each with their own
+                     db, chunk size, top_k, etc.
+        """
         root = project_root or Path.cwd()
         settings = SettingsFactory(project_root=root).create(
-            vector_store_type=vector_store_type
+            vector_store_type=vector_store_type,
+            config_file=config_file,
         )
         logger_factory: Callable[[str], ILogger] = LoggerFactory.create
         adapter_factory = AdapterFactory(

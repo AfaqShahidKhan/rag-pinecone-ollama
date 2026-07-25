@@ -1,0 +1,63 @@
+# config/default.yml
+#
+# Base configuration — the fallback for every customizable RAG setting.
+# A per-user file (e.g. config/user_afaq.yml) only needs to list the keys
+# it wants to OVERRIDE; anything it omits falls back to this file, then to
+# .env, then to the hardcoded dataclass default.
+#
+# Never put secrets (API keys) in this file — those stay in .env only.
+
+vector_store_type: pinecone # pinecone | chroma | qdrant
+
+pinecone:
+  index_name: rag-index
+  cloud: aws
+  region: us-east-1
+
+chroma:
+  persist_directory: ./data/chroma
+  collection_name: rag-collection
+
+qdrant:
+  url: # blank = local on-disk mode
+  path: ./data/qdrant
+  collection_name: rag-collection
+
+ollama:
+  base_url: http://localhost:11434
+  embed_model: nomic-embed-text
+  generation_model: gemma3
+  embedding_dimension: 768
+
+chunking:
+  chunk_size: 512
+  chunk_overlap: 64
+
+semantic_chunking:
+  similarity_threshold: 0.75
+  min_sentences_per_chunk: 2
+  max_sentences_per_chunk: 15
+
+retrieval:
+  top_k: 5
+
+prompt:
+  max_context_chars: 6000
+
+ingestion:
+  upsert_batch_size: 100
+  embed_batch_size: 8
+  embed_retries: 3
+  docx_pseudo_page_chars: 3000
+
+pii:
+  enabled: true
+  enabled_types: [] # empty = all supported types active
+
+relational_store:
+  enabled: true
+  db_path: ./data/relational/rag_chunks.db
+
+corpus:
+  enabled: true
+  output_dir: ./data/corpus

@@ -2,10 +2,12 @@
 src/application/services/ingestion_service.py
 
 Orchestrates the ingestion pipeline:
-    load → pre_process → chunk → embed → upsert → [save to relational store]
+    load → pre_process → [write corpus] → chunk → embed → upsert → [save to relational store]
 
 Phase 5: optionally persists embedded chunks to the relational store
 after the vector store upsert, enabling parent-child retrieval.
+Corpus step: optionally writes pre-processed documents to a human-readable
+Markdown corpus, independent of chunk size or vector store choice.
 """
 
 from __future__ import annotations
@@ -14,6 +16,7 @@ from pathlib import Path
 
 from src.domain.entities import Document, EmbeddedChunk
 from src.domain.interfaces import (
+    ICorpusWriter,
     IDocumentLoaderResolver,
     IDocumentProcessor,
     IEmbeddingProvider,
@@ -36,6 +39,7 @@ class IngestionService:
         pre_processor: IDocumentProcessor | None = None,
         relational_store: IRelationalStore | None = None,
         id_strategy: IVectorIdStrategy | None = None,
+        corpus_writer: ICorpusWriter | None = None,
     ) -> None:
         self._loader_resolver = loader_resolver
         self._chunker = chunker
@@ -45,10 +49,12 @@ class IngestionService:
         self._pre_processor = pre_processor
         self._relational_store = relational_store
         self._id_strategy = id_strategy
+        self._corpus_writer = corpus_writer
 
     def ingest_path(self, source: Path) -> int:
         documents = self._load(source)
         documents = self._pre_process(documents)
+        self._write_corpus(documents)
         chunks = self._chunker.chunk(documents)
         embedded_chunks = self._embed(chunks)
 
@@ -76,6 +82,11 @@ class IngestionService:
         if self._pre_processor is None:
             return documents
         return self._pre_processor.process_all(documents)
+
+    def _write_corpus(self, documents: list[Document]) -> None:
+        if self._corpus_writer is None:
+            return
+        self._corpus_writer.write(documents)
 
     def _embed(self, chunks: list[Document]) -> list[EmbeddedChunk]:
         texts = [doc.page_content for doc in chunks]

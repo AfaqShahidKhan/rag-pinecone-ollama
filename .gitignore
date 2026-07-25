@@ -10,3 +10,5 @@ data/qdrant/
 .streamlit/
 
 data/relational/
+
+data/corpus/

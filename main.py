@@ -4,6 +4,7 @@ main.py
 CLI entry point. Builds the Container (composition root) once, then
 dispatches to the requested service.
 Phase 4: adds the `watch` command for event-driven landing zone ingestion.
+Step 3: adds `--config` for per-user YAML config profiles.
 """
 
 from __future__ import annotations
@@ -22,6 +23,13 @@ def _print_token(token: str) -> None:
 
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="rag", description="RAG over Pinecone CLI")
+    parser.add_argument(
+        "--config", dest="config_file", default=None,
+        help=(
+            "Path to a per-user YAML config (e.g. config/user_afaq.yml). "
+            "Overrides config/default.yml, which overrides .env / defaults."
+        ),
+    )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     # ingest (batch)
@@ -67,7 +75,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_arg_parser()
     args = parser.parse_args(argv)
 
-    container = Container.bootstrap(token_sink=_print_token)
+    container = Container.bootstrap(token_sink=_print_token, config_file=args.config_file)
 
     if args.command == "ingest":
         source = Path(args.source) if args.source else container.settings.data_raw

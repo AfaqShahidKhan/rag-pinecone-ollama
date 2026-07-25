@@ -3,7 +3,7 @@ src/factories/adapter_factory.py
 
 Abstract factory that constructs every infrastructure adapter.
 Phase 5: adds create_pii_pre_processor() and create_relational_store().
-The pre-processing pipeline now conditionally includes PII redaction.
+Corpus step: adds create_corpus_writer().
 """
 
 from __future__ import annotations
@@ -16,6 +16,7 @@ from rich.console import Console
 from src.config.settings import Settings, VectorStoreType
 from src.domain.interfaces import (
     IAnswerGenerator,
+    ICorpusWriter,
     IDocumentLoader,
     IDocumentProcessor,
     IEmbeddingProvider,
@@ -37,6 +38,7 @@ from src.infrastructure.chunking import (
     RecursiveTextChunker,
     SemanticChunker,
 )
+from src.infrastructure.corpus import MarkdownCorpusWriter
 from src.infrastructure.embeddings import OllamaEmbeddingProvider
 from src.infrastructure.generation import DefaultPromptBuilder, OllamaAnswerGenerator
 from src.infrastructure.landing_zone import FileIngestionAdapter, FileSystemWatcher
@@ -224,6 +226,17 @@ class AdapterFactory:
         return SqliteRelationalStore(
             logger=self._logger_factory("relational_store"),
             settings=self._settings.relational_store,
+        )
+
+    # ── Corpus writer ──────────────────────────────────────────────────────────
+
+    def create_corpus_writer(self) -> ICorpusWriter | None:
+        """Returns None when CORPUS_WRITER_ENABLED=false in .env."""
+        if not self._settings.corpus.enabled:
+            return None
+        return MarkdownCorpusWriter(
+            logger=self._logger_factory("corpus_writer"),
+            corpus_settings=self._settings.corpus,
         )
 
     # ── Generation ─────────────────────────────────────────────────────────────
