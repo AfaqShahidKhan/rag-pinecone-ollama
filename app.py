@@ -49,6 +49,16 @@ DB_OPTIONS = {
     },
 }
 
+# ── Config profiles ─────────────────────────────────────────────────────────────
+CONFIG_DIR = Path(__file__).parent / "config"
+
+
+def _list_config_profiles() -> list[str]:
+    """List config/user_*.yml files the user can pick from the sidebar."""
+    if not CONFIG_DIR.exists():
+        return []
+    return sorted(p.name for p in CONFIG_DIR.glob("user_*.yml"))
+
 # ── PII entity types ───────────────────────────────────────────────────────────
 ALL_PII_TYPES = [
     "EMAIL", "URL", "CNIC", "IBAN", "CREDIT_CARD",
@@ -56,16 +66,17 @@ ALL_PII_TYPES = [
 ]
 
 
-# ── Container cache (per db_type) ──────────────────────────────────────────────
+# ── Container cache (per db_type + config profile) ─────────────────────────────
 @st.cache_resource(
     show_spinner="Connecting to services...",
     hash_funcs={VectorStoreType: lambda v: v.value},
 )
-def get_container(db_type: VectorStoreType) -> Container:
+def get_container(db_type: VectorStoreType, config_file: str | None) -> Container:
     return Container.bootstrap(
         project_root=Path(__file__).parent,
         token_sink=None,
         vector_store_type=db_type,
+        config_file=config_file,
     )
 
 
@@ -101,7 +112,25 @@ with st.sidebar:
     st.caption(DB_OPTIONS[selected_db]["description"])
     st.divider()
 
-    container = get_container(selected_db)
+    st.subheader("👤 Config Profile")
+    profile_options = ["(default)"] + _list_config_profiles()
+    selected_profile = st.selectbox(
+        "Select config profile",
+        options=profile_options,
+        index=0,
+        label_visibility="collapsed",
+    )
+    selected_config_file = (
+        None if selected_profile == "(default)" else f"config/{selected_profile}"
+    )
+    st.caption(
+        "Loads config/default.yml, overridden by the selected profile."
+        if selected_config_file else
+        "Using config/default.yml with no user override."
+    )
+    st.divider()
+
+    container = get_container(selected_db, selected_config_file)
 
     st.caption(
         f"**Model:** `{container.settings.ollama.generation_model}`  \n"
