@@ -135,6 +135,33 @@ class CorpusSettings:
 
 
 @dataclass(frozen=True)
+class TableExtractionSettings:
+    """
+    Controls Markdown table extraction from PDFs via pdfplumber.
+
+    DOCX table extraction is always on — it's already lightweight and uses
+    python-docx, which is loaded regardless of this setting.
+
+    enabled:  Set to False to skip PDF table detection/extraction (pdfplumber
+              won't be invoked at all — pypdf text extraction still runs).
+    """
+    enabled: bool = True
+
+
+@dataclass(frozen=True)
+class ImageExtractionSettings:
+    """
+    Controls extraction of embedded images from PDF/DOCX files to disk.
+
+    enabled:     Set to False to skip image extraction entirely.
+    output_dir:  Root directory. Each source document gets its own subfolder
+                 of extracted images.
+    """
+    enabled: bool = True
+    output_dir: str = "./data/images"
+
+
+@dataclass(frozen=True)
 class Settings:
     pinecone: PineconeSettings
     ollama: OllamaSettings = field(default_factory=OllamaSettings)
@@ -148,6 +175,8 @@ class Settings:
     pii: PiiSettings = field(default_factory=PiiSettings)
     relational_store: RelationalStoreSettings = field(default_factory=RelationalStoreSettings)
     corpus: CorpusSettings = field(default_factory=CorpusSettings)
+    table_extraction: TableExtractionSettings = field(default_factory=TableExtractionSettings)
+    image_extraction: ImageExtractionSettings = field(default_factory=ImageExtractionSettings)
     vector_store_type: VectorStoreType = VectorStoreType.PINECONE
     project_root: Path = field(default_factory=Path.cwd)
 

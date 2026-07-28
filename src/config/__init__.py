@@ -13,6 +13,8 @@ from .settings import (
     PiiSettings,
     RelationalStoreSettings,
     CorpusSettings,
+    TableExtractionSettings,
+    ImageExtractionSettings,
 )
 
 __all__ = [
@@ -30,4 +32,6 @@ __all__ = [
     "PiiSettings",
     "RelationalStoreSettings",
     "CorpusSettings",
+    "TableExtractionSettings",
+    "ImageExtractionSettings",
 ]

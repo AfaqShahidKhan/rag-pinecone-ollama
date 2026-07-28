@@ -4,6 +4,7 @@ src/factories/service_factory.py
 Assembles application-layer services from adapters.
 Phase 5: injects relational_store and id_strategy into both ingestion services.
 Corpus step: injects corpus_writer into both ingestion services.
+Image/table step: injects image_extractor_resolver into both ingestion services.
 """
 
 from __future__ import annotations
@@ -45,6 +46,7 @@ class ServiceFactory:
             relational_store=self._adapters.create_relational_store(),
             id_strategy=self._adapters.create_vector_id_strategy(),
             corpus_writer=self._adapters.create_corpus_writer(),
+            image_extractor_resolver=self._adapters.create_image_extractor_resolver(),
         )
 
     def create_streaming_ingestion_service(self) -> StreamingIngestionService:
@@ -59,6 +61,7 @@ class ServiceFactory:
             relational_store=self._adapters.create_relational_store(),
             id_strategy=self._adapters.create_vector_id_strategy(),
             corpus_writer=self._adapters.create_corpus_writer(),
+            image_extractor_resolver=self._adapters.create_image_extractor_resolver(),
         )
 
     def create_landing_zone_watcher(self, recursive: bool = False) -> ILandingZoneWatcher:

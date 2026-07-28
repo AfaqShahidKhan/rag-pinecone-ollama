@@ -2,12 +2,16 @@
 src/application/services/ingestion_service.py
 
 Orchestrates the ingestion pipeline:
-    load → pre_process → [write corpus] → chunk → embed → upsert → [save to relational store]
+    load → [extract images] → pre_process → [write corpus] → chunk → embed
+    → upsert → [save to relational store]
 
 Phase 5: optionally persists embedded chunks to the relational store
 after the vector store upsert, enabling parent-child retrieval.
 Corpus step: optionally writes pre-processed documents to a human-readable
 Markdown corpus, independent of chunk size or vector store choice.
+Image/table step: PDF tables arrive already as Markdown inside page_content
+(handled in PdfDocumentLoader). Images are extracted separately, right
+after loading, and attached to Document metadata before pre-processing.
 """
 
 from __future__ import annotations
@@ -20,6 +24,7 @@ from src.domain.interfaces import (
     IDocumentLoaderResolver,
     IDocumentProcessor,
     IEmbeddingProvider,
+    IImageExtractorResolver,
     ILogger,
     IRelationalStore,
     ITextChunker,
@@ -40,6 +45,7 @@ class IngestionService:
         relational_store: IRelationalStore | None = None,
         id_strategy: IVectorIdStrategy | None = None,
         corpus_writer: ICorpusWriter | None = None,
+        image_extractor_resolver: IImageExtractorResolver | None = None,
     ) -> None:
         self._loader_resolver = loader_resolver
         self._chunker = chunker
@@ -50,9 +56,11 @@ class IngestionService:
         self._relational_store = relational_store
         self._id_strategy = id_strategy
         self._corpus_writer = corpus_writer
+        self._image_extractor_resolver = image_extractor_resolver
 
     def ingest_path(self, source: Path) -> int:
         documents = self._load(source)
+        documents = self._extract_images(documents)
         documents = self._pre_process(documents)
         self._write_corpus(documents)
         chunks = self._chunker.chunk(documents)
@@ -77,6 +85,26 @@ class IngestionService:
             loader = self._loader_resolver.resolve_for_file(source)
             return loader.load(source)
         return self._loader_resolver.load_all_from_directory(source)
+
+    def _extract_images(self, documents: list[Document]) -> list[Document]:
+        if self._image_extractor_resolver is None:
+            return documents
+
+        # Group by source file (a directory ingest produces documents from
+        # several files in one flat list) so each file is processed once.
+        seen_paths: dict[str, Path] = {}
+        for doc in documents:
+            source_path = doc.metadata.get("source_path")
+            if source_path and source_path not in seen_paths:
+                seen_paths[source_path] = Path(source_path)
+
+        for source_path, path in seen_paths.items():
+            extractor = self._image_extractor_resolver.resolve_for_file(path)
+            if extractor is None:
+                continue
+            documents = extractor.extract(path, documents)
+
+        return documents
 
     def _pre_process(self, documents: list[Document]) -> list[Document]:
         if self._pre_processor is None:

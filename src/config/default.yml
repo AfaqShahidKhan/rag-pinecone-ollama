@@ -61,3 +61,10 @@ relational_store:
 corpus:
   enabled: true
   output_dir: ./data/corpus
+
+table_extraction:
+  enabled: true # PDF tables -> Markdown via pdfplumber
+
+image_extraction:
+  enabled: true # PDF/DOCX embedded images -> saved to disk
+  output_dir: ./data/images

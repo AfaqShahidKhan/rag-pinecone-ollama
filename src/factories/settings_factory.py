@@ -24,6 +24,7 @@ from src.config.settings import (
     ChunkingSettings,
     ChromaSettings,
     CorpusSettings,
+    ImageExtractionSettings,
     IngestionSettings,
     OllamaSettings,
     PineconeSettings,
@@ -34,6 +35,7 @@ from src.config.settings import (
     RetrievalSettings,
     SemanticChunkingSettings,
     Settings,
+    TableExtractionSettings,
     VectorStoreType,
 )
 from src.factories.yaml_config_loader import YamlConfigLoader
@@ -148,6 +150,15 @@ class SettingsFactory:
             corpus=CorpusSettings(
                 enabled=self._bool(yaml_config, "corpus.enabled", "CORPUS_WRITER_ENABLED", True),
                 output_dir=self._value(yaml_config, "corpus.output_dir", "CORPUS_OUTPUT_DIR", "./data/corpus"),
+            ),
+            table_extraction=TableExtractionSettings(
+                enabled=self._bool(yaml_config, "table_extraction.enabled", "TABLE_EXTRACTION_ENABLED", True),
+            ),
+            image_extraction=ImageExtractionSettings(
+                enabled=self._bool(yaml_config, "image_extraction.enabled", "IMAGE_EXTRACTION_ENABLED", True),
+                output_dir=self._value(
+                    yaml_config, "image_extraction.output_dir", "IMAGE_OUTPUT_DIR", "./data/images"
+                ),
             ),
             vector_store_type=store_type,
             project_root=self._project_root,

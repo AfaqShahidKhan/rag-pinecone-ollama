@@ -5,6 +5,8 @@ Processes documents one file at a time.
 Phase 5: optionally persists embedded chunks to the relational store.
 Corpus step: optionally writes pre-processed documents to a human-readable
 Markdown corpus, right after pre-processing and before chunking.
+Image/table step: extracts images right after loading a file, before
+pre-processing. PDF tables arrive already as Markdown inside page_content.
 """
 
 from __future__ import annotations
@@ -17,6 +19,7 @@ from src.domain.interfaces import (
     IDocumentLoaderResolver,
     IDocumentProcessor,
     IEmbeddingProvider,
+    IImageExtractorResolver,
     ILogger,
     IRelationalStore,
     ITextChunker,
@@ -37,6 +40,7 @@ class StreamingIngestionService:
         relational_store: IRelationalStore | None = None,
         id_strategy: IVectorIdStrategy | None = None,
         corpus_writer: ICorpusWriter | None = None,
+        image_extractor_resolver: IImageExtractorResolver | None = None,
     ) -> None:
         self._loader_resolver = loader_resolver
         self._chunker = chunker
@@ -47,6 +51,7 @@ class StreamingIngestionService:
         self._relational_store = relational_store
         self._id_strategy = id_strategy
         self._corpus_writer = corpus_writer
+        self._image_extractor_resolver = image_extractor_resolver
         self._index_ready = False
 
     def ingest_file(self, path: Path) -> int:
@@ -59,6 +64,7 @@ class StreamingIngestionService:
             )
             return 0
 
+        documents = self._extract_images(path, documents)
         documents = self._pre_process(documents)
         if not documents:
             self._logger.warning(
@@ -111,6 +117,14 @@ class StreamingIngestionService:
             f"StreamingIngestionService: complete — {total} total vectors indexed."
         )
         return total
+
+    def _extract_images(self, path: Path, documents: list[Document]) -> list[Document]:
+        if self._image_extractor_resolver is None:
+            return documents
+        extractor = self._image_extractor_resolver.resolve_for_file(path)
+        if extractor is None:
+            return documents
+        return extractor.extract(path, documents)
 
     def _pre_process(self, documents: list[Document]) -> list[Document]:
         if self._pre_processor is None:
