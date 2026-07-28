@@ -12,3 +12,5 @@ data/qdrant/
 data/relational/
 
 data/corpus/
+
+config/

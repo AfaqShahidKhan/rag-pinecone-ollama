@@ -15,6 +15,7 @@ Run:  streamlit run app.py
 
 from __future__ import annotations
 
+import yaml
 import queue
 import threading
 import time
@@ -58,6 +59,21 @@ def _list_config_profiles() -> list[str]:
     if not CONFIG_DIR.exists():
         return []
     return sorted(p.name for p in CONFIG_DIR.glob("user_*.yml"))
+
+def _save_user_profile(profile_name: str, overrides: dict) -> Path:
+    """
+    Writes config/user_<profile_name>.yml with only the keys the user set.
+    Anything omitted keeps falling back to config/default.yml as usual.
+    """
+    safe_name = "".join(c for c in profile_name.strip() if c.isalnum() or c in ("_", "-"))
+    if not safe_name:
+        raise ValueError("Profile name must contain at least one letter, number, - or _.")
+
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    path = CONFIG_DIR / f"user_{safe_name}.yml"
+    with path.open("w", encoding="utf-8") as f:
+        yaml.safe_dump(overrides, f, sort_keys=False, default_flow_style=False)
+    return path
 
 # ── PII entity types ───────────────────────────────────────────────────────────
 ALL_PII_TYPES = [
@@ -130,6 +146,59 @@ with st.sidebar:
     )
     st.divider()
 
+    # ← NEW: goes here ─────────────────────────────────────────────
+    with st.expander("➕ Create new profile"):
+        new_name = st.text_input("Profile name", placeholder="afaq", key="new_profile_name")
+        new_db = st.selectbox(
+            "Vector store", options=[t.value for t in VectorStoreType],
+            key="new_profile_db",
+        )
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            new_chunk_size = st.number_input("Chunk size", min_value=50, value=512, key="new_profile_chunk_size")
+        with c2:
+            new_chunk_overlap = st.number_input("Chunk overlap", min_value=0, value=64, key="new_profile_chunk_overlap")
+        with c3:
+            new_top_k = st.number_input("Top-K", min_value=1, value=5, key="new_profile_top_k")
+
+        new_pii = st.checkbox("Enable PII redaction", value=True, key="new_profile_pii")
+        new_relational = st.checkbox("Enable relational store", value=True, key="new_profile_relational")
+
+        if st.button("💾 Save profile", key="save_new_profile"):
+            if not new_name.strip():
+                st.error("Enter a profile name first.")
+            else:
+                overrides = {
+                    "vector_store_type": new_db,
+                    "chunking": {
+                        "chunk_size": int(new_chunk_size),
+                        "chunk_overlap": int(new_chunk_overlap),
+                    },
+                    "retrieval": {"top_k": int(new_top_k)},
+                    "pii": {"enabled": new_pii},
+                    "relational_store": {
+                        "enabled": new_relational,
+                        "db_path": f"./data/relational/{new_name.strip()}_chunks.db",
+                    },
+                    "corpus": {"output_dir": f"./data/corpus/{new_name.strip()}"},
+                }
+                if new_db == VectorStoreType.CHROMA.value:
+                    overrides["chroma"] = {
+                        "persist_directory": f"./data/chroma/{new_name.strip()}",
+                        "collection_name": f"{new_name.strip()}-collection",
+                    }
+                elif new_db == VectorStoreType.QDRANT.value:
+                    overrides["qdrant"] = {"collection_name": f"{new_name.strip()}-collection"}
+
+                try:
+                    saved_path = _save_user_profile(new_name, overrides)
+                    st.success(f"Saved `{saved_path.name}` — select it above.")
+                    st.rerun()
+                except ValueError as e:
+                    st.error(str(e))
+    st.divider()
+    # ← end of new block ───────────────────────────────────────────
+
     container = get_container(selected_db, selected_config_file)
 
     st.caption(
@@ -148,7 +217,6 @@ with st.sidebar:
     stream = st.toggle("Stream answer", value=True)
     st.divider()
     st.caption("Tabs: Ask · Ingest · Watch · Eval · Debug · DB · Settings")
-
 
 # ── Tabs ───────────────────────────────────────────────────────────────────────
 (
