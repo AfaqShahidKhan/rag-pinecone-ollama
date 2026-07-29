@@ -50,6 +50,14 @@ class OllamaSettings:
 class ChunkingSettings:
     chunk_size: int = 512
     chunk_overlap: int = 64
+    max_table_chunk_chars: int = 4000
+    """
+    Tables (Markdown, from PdfDocumentLoader/DocxDocumentLoader) up to this
+    size are kept as ONE atomic chunk, regardless of chunk_size — a whole
+    table with its header intact beats a "correctly sized" fragment that's
+    missing its column labels. Tables larger than this get split by rows,
+    with the header + separator row repeated at the top of every part.
+    """
 
 
 @dataclass(frozen=True)

@@ -84,6 +84,9 @@ class SettingsFactory:
             chunking=ChunkingSettings(
                 chunk_size=int(self._value(yaml_config, "chunking.chunk_size", "CHUNK_SIZE", 512)),
                 chunk_overlap=int(self._value(yaml_config, "chunking.chunk_overlap", "CHUNK_OVERLAP", 64)),
+                max_table_chunk_chars=int(
+                    self._value(yaml_config, "chunking.max_table_chunk_chars", "MAX_TABLE_CHUNK_CHARS", 4000)
+                ),
             ),
             semantic_chunking=SemanticChunkingSettings(
                 similarity_threshold=float(

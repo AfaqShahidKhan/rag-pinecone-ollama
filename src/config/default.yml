@@ -32,6 +32,7 @@ ollama:
 chunking:
   chunk_size: 512
   chunk_overlap: 64
+  max_table_chunk_chars: 4000 # tables larger than this get split by rows, header repeated in each part
 
 semantic_chunking:
   similarity_threshold: 0.75
