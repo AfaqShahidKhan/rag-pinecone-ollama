@@ -52,11 +52,11 @@ class ChunkingSettings:
     chunk_overlap: int = 64
     max_table_chunk_chars: int = 4000
     """
-    Tables (Markdown, from PdfDocumentLoader/DocxDocumentLoader) up to this
-    size are kept as ONE atomic chunk, regardless of chunk_size — a whole
-    table with its header intact beats a "correctly sized" fragment that's
-    missing its column labels. Tables larger than this get split by rows,
-    with the header + separator row repeated at the top of every part.
+    Tables (Markdown, from PdfDocumentLoader/DocxDocumentLoader/PptxDocumentLoader)
+    up to this size are kept as ONE atomic chunk, regardless of chunk_size —
+    a whole table with its header intact beats a "correctly sized" fragment
+    that's missing its column labels. Tables larger than this get split by
+    rows, with the header + separator row repeated at the top of every part.
     """
 
 
@@ -147,8 +147,8 @@ class TableExtractionSettings:
     """
     Controls Markdown table extraction from PDFs via pdfplumber.
 
-    DOCX table extraction is always on — it's already lightweight and uses
-    python-docx, which is loaded regardless of this setting.
+    DOCX/PPTX table extraction is always on — both already use their
+    respective libraries (python-docx / python-pptx) regardless of this flag.
 
     enabled:  Set to False to skip PDF table detection/extraction (pdfplumber
               won't be invoked at all — pypdf text extraction still runs).
@@ -170,6 +170,22 @@ class ImageExtractionSettings:
 
 
 @dataclass(frozen=True)
+class LibreOfficeSettings:
+    """
+    Controls legacy Office format conversion (.ppt -> .pptx) via LibreOffice
+    headless mode. Requires LibreOffice installed separately — this is a
+    system dependency, not a Python package.
+
+    executable_path:  Path to the soffice/soffice.exe binary. "soffice"
+                       works if it's on PATH; otherwise give the full path
+                       (Windows default: C:\\Program Files\\LibreOffice\\program\\soffice.exe).
+    timeout_seconds:   Max time to wait for a single file's conversion.
+    """
+    executable_path: str = "soffice"
+    timeout_seconds: int = 120
+
+
+@dataclass(frozen=True)
 class Settings:
     pinecone: PineconeSettings
     ollama: OllamaSettings = field(default_factory=OllamaSettings)
@@ -185,6 +201,7 @@ class Settings:
     corpus: CorpusSettings = field(default_factory=CorpusSettings)
     table_extraction: TableExtractionSettings = field(default_factory=TableExtractionSettings)
     image_extraction: ImageExtractionSettings = field(default_factory=ImageExtractionSettings)
+    libreoffice: LibreOfficeSettings = field(default_factory=LibreOfficeSettings)
     vector_store_type: VectorStoreType = VectorStoreType.PINECONE
     project_root: Path = field(default_factory=Path.cwd)
 

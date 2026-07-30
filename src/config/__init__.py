@@ -15,6 +15,7 @@ from .settings import (
     CorpusSettings,
     TableExtractionSettings,
     ImageExtractionSettings,
+    LibreOfficeSettings,
 )
 
 __all__ = [
@@ -34,4 +35,5 @@ __all__ = [
     "CorpusSettings",
     "TableExtractionSettings",
     "ImageExtractionSettings",
+    "LibreOfficeSettings",
 ]

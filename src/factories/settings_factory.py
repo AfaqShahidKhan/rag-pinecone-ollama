@@ -26,6 +26,7 @@ from src.config.settings import (
     CorpusSettings,
     ImageExtractionSettings,
     IngestionSettings,
+    LibreOfficeSettings,
     OllamaSettings,
     PineconeSettings,
     PiiSettings,
@@ -161,6 +162,14 @@ class SettingsFactory:
                 enabled=self._bool(yaml_config, "image_extraction.enabled", "IMAGE_EXTRACTION_ENABLED", True),
                 output_dir=self._value(
                     yaml_config, "image_extraction.output_dir", "IMAGE_OUTPUT_DIR", "./data/images"
+                ),
+            ),
+            libreoffice=LibreOfficeSettings(
+                executable_path=self._value(
+                    yaml_config, "libreoffice.executable_path", "LIBREOFFICE_PATH", "soffice"
+                ),
+                timeout_seconds=int(
+                    self._value(yaml_config, "libreoffice.timeout_seconds", "LIBREOFFICE_TIMEOUT_SECONDS", 120)
                 ),
             ),
             vector_store_type=store_type,

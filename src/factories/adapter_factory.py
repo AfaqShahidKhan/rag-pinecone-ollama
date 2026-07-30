@@ -7,6 +7,8 @@ Corpus step: adds create_corpus_writer().
 Image/table step: PdfDocumentLoader now takes TableExtractionSettings;
 adds create_image_extractors() / create_image_extractor_resolver().
 PPTX step: registers PptxDocumentLoader.
+Legacy PPT step: registers PptDocumentLoader (LibreOffice-backed .ppt -> .pptx
+conversion), sharing the same PptxDocumentLoader instance for extraction.
 """
 
 from __future__ import annotations
@@ -44,6 +46,7 @@ from src.infrastructure.chunking import (
     RecursiveTextChunker,
     SemanticChunker,
 )
+from src.infrastructure.conversion import LibreOfficeConverter
 from src.infrastructure.corpus import MarkdownCorpusWriter
 from src.infrastructure.embeddings import OllamaEmbeddingProvider
 from src.infrastructure.generation import DefaultPromptBuilder, OllamaAnswerGenerator
@@ -55,6 +58,7 @@ from src.infrastructure.loaders import (
     JsonLoader,
     OcrLoader,
     PdfDocumentLoader,
+    PptDocumentLoader,
     PptxDocumentLoader,
 )
 from src.infrastructure.pii import RegexPiiAnonymizer
@@ -92,6 +96,13 @@ class AdapterFactory:
 
     def create_document_loaders(self) -> list[IDocumentLoader]:
         ocr_lang = os.getenv("TESSERACT_LANG", "eng")
+
+        pptx_loader = PptxDocumentLoader(logger=self._logger_factory("loaders.pptx"))
+        libreoffice_converter = LibreOfficeConverter(
+            logger=self._logger_factory("conversion.libreoffice"),
+            settings=self._settings.libreoffice,
+        )
+
         return [
             PdfDocumentLoader(
                 logger=self._logger_factory("loaders.pdf"),
@@ -101,7 +112,12 @@ class AdapterFactory:
                 logger=self._logger_factory("loaders.docx"),
                 ingestion_settings=self._settings.ingestion,
             ),
-            PptxDocumentLoader(logger=self._logger_factory("loaders.pptx")),
+            pptx_loader,
+            PptDocumentLoader(
+                logger=self._logger_factory("loaders.ppt"),
+                converter=libreoffice_converter,
+                pptx_loader=pptx_loader,
+            ),
             HtmlLoader(logger=self._logger_factory("loaders.html")),
             JsonLoader(logger=self._logger_factory("loaders.json")),
             OcrLoader(logger=self._logger_factory("loaders.ocr"), lang=ocr_lang),
