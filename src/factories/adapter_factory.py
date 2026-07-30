@@ -6,6 +6,7 @@ Phase 5: adds create_pii_pre_processor() and create_relational_store().
 Corpus step: adds create_corpus_writer().
 Image/table step: PdfDocumentLoader now takes TableExtractionSettings;
 adds create_image_extractors() / create_image_extractor_resolver().
+PPTX step: registers PptxDocumentLoader.
 """
 
 from __future__ import annotations
@@ -54,6 +55,7 @@ from src.infrastructure.loaders import (
     JsonLoader,
     OcrLoader,
     PdfDocumentLoader,
+    PptxDocumentLoader,
 )
 from src.infrastructure.pii import RegexPiiAnonymizer
 from src.infrastructure.pre_processing import (
@@ -99,6 +101,7 @@ class AdapterFactory:
                 logger=self._logger_factory("loaders.docx"),
                 ingestion_settings=self._settings.ingestion,
             ),
+            PptxDocumentLoader(logger=self._logger_factory("loaders.pptx")),
             HtmlLoader(logger=self._logger_factory("loaders.html")),
             JsonLoader(logger=self._logger_factory("loaders.json")),
             OcrLoader(logger=self._logger_factory("loaders.ocr"), lang=ocr_lang),
