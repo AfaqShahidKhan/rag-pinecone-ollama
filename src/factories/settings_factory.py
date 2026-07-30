@@ -27,6 +27,7 @@ from src.config.settings import (
     ImageExtractionSettings,
     IngestionSettings,
     LibreOfficeSettings,
+    LoggingSettings,
     OllamaSettings,
     PineconeSettings,
     PiiSettings,
@@ -171,6 +172,18 @@ class SettingsFactory:
                 timeout_seconds=int(
                     self._value(yaml_config, "libreoffice.timeout_seconds", "LIBREOFFICE_TIMEOUT_SECONDS", 120)
                 ),
+            ),
+            logging=LoggingSettings(
+                log_dir=self._value(yaml_config, "logging.log_dir", "LOG_DIR", "./logs"),
+                filename=self._value(yaml_config, "logging.filename", "LOG_FILENAME", "rag.log"),
+                max_bytes=int(
+                    self._value(yaml_config, "logging.max_bytes", "LOG_MAX_BYTES", 10 * 1024 * 1024)
+                ),
+                backup_count=int(
+                    self._value(yaml_config, "logging.backup_count", "LOG_BACKUP_COUNT", 5)
+                ),
+                console_level=self._value(yaml_config, "logging.console_level", "LOG_CONSOLE_LEVEL", "INFO"),
+                file_level=self._value(yaml_config, "logging.file_level", "LOG_FILE_LEVEL", "DEBUG"),
             ),
             vector_store_type=store_type,
             project_root=self._project_root,

@@ -66,7 +66,7 @@ class Container:
             vector_store_type=vector_store_type,
             config_file=config_file,
         )
-        logger_factory: Callable[[str], ILogger] = LoggerFactory.create
+        logger_factory: Callable[[str], ILogger] = LoggerFactory(settings.logging).create
         adapter_factory = AdapterFactory(
             settings=settings,
             logger_factory=logger_factory,
