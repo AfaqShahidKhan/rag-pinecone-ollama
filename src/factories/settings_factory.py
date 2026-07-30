@@ -24,7 +24,9 @@ from src.config.settings import (
     ChunkingSettings,
     ChromaSettings,
     CorpusSettings,
+    ImageExtractionSettings,
     IngestionSettings,
+    LibreOfficeSettings,
     OllamaSettings,
     PineconeSettings,
     PiiSettings,
@@ -34,6 +36,7 @@ from src.config.settings import (
     RetrievalSettings,
     SemanticChunkingSettings,
     Settings,
+    TableExtractionSettings,
     VectorStoreType,
 )
 from src.factories.yaml_config_loader import YamlConfigLoader
@@ -82,6 +85,9 @@ class SettingsFactory:
             chunking=ChunkingSettings(
                 chunk_size=int(self._value(yaml_config, "chunking.chunk_size", "CHUNK_SIZE", 512)),
                 chunk_overlap=int(self._value(yaml_config, "chunking.chunk_overlap", "CHUNK_OVERLAP", 64)),
+                max_table_chunk_chars=int(
+                    self._value(yaml_config, "chunking.max_table_chunk_chars", "MAX_TABLE_CHUNK_CHARS", 4000)
+                ),
             ),
             semantic_chunking=SemanticChunkingSettings(
                 similarity_threshold=float(
@@ -148,6 +154,23 @@ class SettingsFactory:
             corpus=CorpusSettings(
                 enabled=self._bool(yaml_config, "corpus.enabled", "CORPUS_WRITER_ENABLED", True),
                 output_dir=self._value(yaml_config, "corpus.output_dir", "CORPUS_OUTPUT_DIR", "./data/corpus"),
+            ),
+            table_extraction=TableExtractionSettings(
+                enabled=self._bool(yaml_config, "table_extraction.enabled", "TABLE_EXTRACTION_ENABLED", True),
+            ),
+            image_extraction=ImageExtractionSettings(
+                enabled=self._bool(yaml_config, "image_extraction.enabled", "IMAGE_EXTRACTION_ENABLED", True),
+                output_dir=self._value(
+                    yaml_config, "image_extraction.output_dir", "IMAGE_OUTPUT_DIR", "./data/images"
+                ),
+            ),
+            libreoffice=LibreOfficeSettings(
+                executable_path=self._value(
+                    yaml_config, "libreoffice.executable_path", "LIBREOFFICE_PATH", "soffice"
+                ),
+                timeout_seconds=int(
+                    self._value(yaml_config, "libreoffice.timeout_seconds", "LIBREOFFICE_TIMEOUT_SECONDS", 120)
+                ),
             ),
             vector_store_type=store_type,
             project_root=self._project_root,

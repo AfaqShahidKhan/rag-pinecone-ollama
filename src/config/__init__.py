@@ -13,6 +13,9 @@ from .settings import (
     PiiSettings,
     RelationalStoreSettings,
     CorpusSettings,
+    TableExtractionSettings,
+    ImageExtractionSettings,
+    LibreOfficeSettings,
 )
 
 __all__ = [
@@ -30,4 +33,7 @@ __all__ = [
     "PiiSettings",
     "RelationalStoreSettings",
     "CorpusSettings",
+    "TableExtractionSettings",
+    "ImageExtractionSettings",
+    "LibreOfficeSettings",
 ]

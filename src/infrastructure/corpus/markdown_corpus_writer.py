@@ -7,20 +7,13 @@ Writes one .md file per pre-processed Document into:
 
     {output_dir}/{sanitized_source_stem}/{page|section}_{NNN}.md
 
-e.g.
-
-    data/corpus/
-      FCCL-Annual-Report-2023/
-        page_001.md
-        page_002.md
-      LLM_Hallucinations_Training/
-        section_001.md
-
 Uses "section_" instead of "page_" for file types that don't have a natural
 page concept (html, json) — everything else uses "page_".
 
 Runs after pre-processing, so it only ever sees clean, PII-redacted text —
-never raw loader output.
+never raw loader output. table_count comes from PdfDocumentLoader;
+image_count comes from PdfImageExtractor ("images") or DocxImageExtractor
+("source_images") — whichever is present.
 """
 
 from __future__ import annotations
@@ -76,6 +69,7 @@ class MarkdownCorpusWriter(ICorpusWriter):
 
     @staticmethod
     def _build_front_matter(meta: dict) -> str:
+        image_count = len(meta.get("images", [])) + len(meta.get("source_images", []))
         lines = [
             "---",
             f"source: {meta.get('source', 'unknown')}",
@@ -84,6 +78,8 @@ class MarkdownCorpusWriter(ICorpusWriter):
             f"file_type: {meta.get('file_type', 'unknown')}",
             f"word_count: {meta.get('word_count', 0)}",
             f"has_tables: {str(meta.get('has_tables', False)).lower()}",
+            f"table_count: {meta.get('table_count', 0)}",
+            f"image_count: {image_count}",
             f"pii_redacted: {str(meta.get('pii_redacted', False)).lower()}",
             f"ingested_at: {meta.get('ingested_at', '')}",
             "---",

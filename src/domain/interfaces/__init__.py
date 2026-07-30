@@ -12,6 +12,7 @@ from .landing_zone import ILandingZoneWatcher, IIngestionAdapter
 from .pii_anonymizer import IPiiAnonymizer, RedactionResult
 from .relational_store import IRelationalStore
 from .corpus_writer import ICorpusWriter
+from .image_extractor import IImageExtractor, IImageExtractorResolver
 
 __all__ = [
     "ILogger",
@@ -32,4 +33,6 @@ __all__ = [
     "RedactionResult",
     "IRelationalStore",
     "ICorpusWriter",
+    "IImageExtractor",
+    "IImageExtractorResolver",
 ]

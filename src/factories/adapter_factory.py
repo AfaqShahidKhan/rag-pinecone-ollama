@@ -4,6 +4,11 @@ src/factories/adapter_factory.py
 Abstract factory that constructs every infrastructure adapter.
 Phase 5: adds create_pii_pre_processor() and create_relational_store().
 Corpus step: adds create_corpus_writer().
+Image/table step: PdfDocumentLoader now takes TableExtractionSettings;
+adds create_image_extractors() / create_image_extractor_resolver().
+PPTX step: registers PptxDocumentLoader.
+Legacy PPT step: registers PptDocumentLoader (LibreOffice-backed .ppt -> .pptx
+conversion), sharing the same PptxDocumentLoader instance for extraction.
 """
 
 from __future__ import annotations
@@ -21,6 +26,8 @@ from src.domain.interfaces import (
     IDocumentProcessor,
     IEmbeddingProvider,
     IEvalReporter,
+    IImageExtractor,
+    IImageExtractorResolver,
     IIngestionAdapter,
     ILandingZoneWatcher,
     ILogger,
@@ -31,6 +38,7 @@ from src.domain.interfaces import (
     IVectorStore,
 )
 from src.factories.document_loader_factory import DocumentLoaderFactory
+from src.factories.image_extractor_factory import ImageExtractorFactory
 from src.factories.sdk_client_factory import SdkClientFactory
 from src.infrastructure.chunking import (
     ChunkingRoute,
@@ -38,9 +46,11 @@ from src.infrastructure.chunking import (
     RecursiveTextChunker,
     SemanticChunker,
 )
+from src.infrastructure.conversion import LibreOfficeConverter
 from src.infrastructure.corpus import MarkdownCorpusWriter
 from src.infrastructure.embeddings import OllamaEmbeddingProvider
 from src.infrastructure.generation import DefaultPromptBuilder, OllamaAnswerGenerator
+from src.infrastructure.images import DocxImageExtractor, PdfImageExtractor
 from src.infrastructure.landing_zone import FileIngestionAdapter, FileSystemWatcher
 from src.infrastructure.loaders import (
     DocxDocumentLoader,
@@ -48,6 +58,8 @@ from src.infrastructure.loaders import (
     JsonLoader,
     OcrLoader,
     PdfDocumentLoader,
+    PptDocumentLoader,
+    PptxDocumentLoader,
 )
 from src.infrastructure.pii import RegexPiiAnonymizer
 from src.infrastructure.pre_processing import (
@@ -84,11 +96,27 @@ class AdapterFactory:
 
     def create_document_loaders(self) -> list[IDocumentLoader]:
         ocr_lang = os.getenv("TESSERACT_LANG", "eng")
+
+        pptx_loader = PptxDocumentLoader(logger=self._logger_factory("loaders.pptx"))
+        libreoffice_converter = LibreOfficeConverter(
+            logger=self._logger_factory("conversion.libreoffice"),
+            settings=self._settings.libreoffice,
+        )
+
         return [
-            PdfDocumentLoader(logger=self._logger_factory("loaders.pdf")),
+            PdfDocumentLoader(
+                logger=self._logger_factory("loaders.pdf"),
+                table_extraction_settings=self._settings.table_extraction,
+            ),
             DocxDocumentLoader(
                 logger=self._logger_factory("loaders.docx"),
                 ingestion_settings=self._settings.ingestion,
+            ),
+            pptx_loader,
+            PptDocumentLoader(
+                logger=self._logger_factory("loaders.ppt"),
+                converter=libreoffice_converter,
+                pptx_loader=pptx_loader,
             ),
             HtmlLoader(logger=self._logger_factory("loaders.html")),
             JsonLoader(logger=self._logger_factory("loaders.json")),
@@ -99,6 +127,29 @@ class AdapterFactory:
         return DocumentLoaderFactory(
             loaders=self.create_document_loaders(),
             logger=self._logger_factory("loaders.resolver"),
+        )
+
+    # ── Image extraction ───────────────────────────────────────────────────────
+
+    def create_image_extractors(self) -> list[IImageExtractor]:
+        return [
+            PdfImageExtractor(
+                logger=self._logger_factory("images.pdf"),
+                settings=self._settings.image_extraction,
+            ),
+            DocxImageExtractor(
+                logger=self._logger_factory("images.docx"),
+                settings=self._settings.image_extraction,
+            ),
+        ]
+
+    def create_image_extractor_resolver(self) -> IImageExtractorResolver | None:
+        """Returns None when IMAGE_EXTRACTION_ENABLED=false in .env / YAML."""
+        if not self._settings.image_extraction.enabled:
+            return None
+        return ImageExtractorFactory(
+            extractors=self.create_image_extractors(),
+            logger=self._logger_factory("images.resolver"),
         )
 
     # ── Pre-processing (Phase 1 + 3 + 5) ──────────────────────────────────────
