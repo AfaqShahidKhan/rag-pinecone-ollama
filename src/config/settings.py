@@ -186,6 +186,29 @@ class LibreOfficeSettings:
 
 
 @dataclass(frozen=True)
+class LoggingSettings:
+    """
+    Controls persistent file logging, in addition to the existing console
+    output — so ingestion/watch/ask runs can be traced after the fact,
+    including crashes that happen with nobody watching the terminal.
+
+    log_dir / filename:  Where the log file lives. Rotates automatically —
+                          old data is never lost silently, just aged out.
+    max_bytes:            Size at which the current log file rotates.
+    backup_count:         How many rotated files to keep (oldest deleted first).
+    console_level:        Verbosity of what you see in the terminal.
+    file_level:            Verbosity written to disk — can be more detailed
+                           (e.g. DEBUG) than the console without cluttering it.
+    """
+    log_dir: str = "./logs"
+    filename: str = "rag.log"
+    max_bytes: int = 10 * 1024 * 1024  # 10 MB
+    backup_count: int = 5
+    console_level: str = "INFO"
+    file_level: str = "DEBUG"
+
+
+@dataclass(frozen=True)
 class Settings:
     pinecone: PineconeSettings
     ollama: OllamaSettings = field(default_factory=OllamaSettings)
@@ -202,6 +225,7 @@ class Settings:
     table_extraction: TableExtractionSettings = field(default_factory=TableExtractionSettings)
     image_extraction: ImageExtractionSettings = field(default_factory=ImageExtractionSettings)
     libreoffice: LibreOfficeSettings = field(default_factory=LibreOfficeSettings)
+    logging: LoggingSettings = field(default_factory=LoggingSettings)
     vector_store_type: VectorStoreType = VectorStoreType.PINECONE
     project_root: Path = field(default_factory=Path.cwd)
 

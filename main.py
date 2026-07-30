@@ -5,11 +5,16 @@ CLI entry point. Builds the Container (composition root) once, then
 dispatches to the requested service.
 Phase 4: adds the `watch` command for event-driven landing zone ingestion.
 Step 3: adds `--config` for per-user YAML config profiles.
+Logging step: wraps dispatch in a top-level try/except so an uncaught
+exception is always logged (with traceback) to the rotating file before
+the process exits — not just whatever happened to reach a logger.error()
+call before the crash.
 """
 
 from __future__ import annotations
 
 import argparse
+import logging
 import sys
 import time
 from pathlib import Path
@@ -71,12 +76,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: list[str] | None = None) -> int:
-    parser = build_arg_parser()
-    args = parser.parse_args(argv)
-
-    container = Container.bootstrap(token_sink=_print_token, config_file=args.config_file)
-
+def _dispatch(container: Container, args: argparse.Namespace) -> int:
     if args.command == "ingest":
         source = Path(args.source) if args.source else container.settings.data_raw
         total = container.ingestion_service.ingest_path(source)
@@ -108,7 +108,6 @@ def main(argv: list[str] | None = None) -> int:
             print(f"Error: directory not found: '{source}'")
             return 1
 
-        # Build a dedicated watcher (with recursive flag if requested)
         watcher = container._services.create_landing_zone_watcher(
             recursive=getattr(args, "recursive", False)
         )
@@ -126,8 +125,22 @@ def main(argv: list[str] | None = None) -> int:
 
         return 0
 
-    parser.print_help()
     return 1
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_arg_parser()
+    args = parser.parse_args(argv)
+
+    try:
+        container = Container.bootstrap(token_sink=_print_token, config_file=args.config_file)
+        return _dispatch(container, args)
+    except Exception:
+        # Ensures a crash is always traceable in logs/rag.log, even if it
+        # happens before any component-level logger.error() call runs.
+        logging.getLogger("main").exception("Unhandled exception during CLI execution.")
+        print("\nAn unexpected error occurred. See logs/rag.log for the full traceback.")
+        return 1
 
 
 if __name__ == "__main__":

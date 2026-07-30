@@ -69,3 +69,11 @@ table_extraction:
 image_extraction:
   enabled: true # PDF/DOCX embedded images -> saved to disk
   output_dir: ./data/images
+
+logging:
+  log_dir: ./logs
+  filename: rag.log
+  max_bytes: 10485760 # 10 MB — rotates automatically
+  backup_count: 5 # keep last 5 rotated files
+  console_level: INFO
+  file_level: DEBUG # file captures more detail than the console
