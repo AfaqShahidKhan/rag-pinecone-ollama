@@ -388,8 +388,68 @@ with tab_ingest:
                         )
                 except Exception as e:
                     st.error(f"Ingestion failed: {e}")
+   
+   
+    # ── Corpus-only test path (no embedding/vector store needed) ───────────
 
+    st.divider()
+    st.subheader("🧪 Build Corpus Only (no embedding — for testing)")
+    st.caption(
+        "Runs only load → image extraction → pre-processing → corpus writing. "
+        "No Ollama or vector store connection needed. Use this to check PII "
+        "redaction, table extraction, and image extraction before committing "
+        "to a full (slower) ingest — the DB selector above has no effect here."
+    )
 
+    col3, col4 = st.columns([2, 1])
+    with col3:
+        corpus_test_path = st.text_input(
+            "Directory or file path (leave blank for data/landing_zone)",
+            placeholder=str(container.settings.data_raw),
+            key="corpus_test_path",
+        )
+    with col4:
+        st.write("")
+        st.write("")
+        run_corpus_only = st.button(
+            "🧪 Build Corpus Only", use_container_width=True, key="run_corpus_only"
+        )
+
+    if run_corpus_only:
+        source = (
+            Path(corpus_test_path.strip()) if corpus_test_path.strip()
+            else container.settings.data_raw
+        )
+        if not source.exists():
+            st.error(f"Path not found: `{source}`")
+        else:
+            with st.spinner(f"Parsing `{source}` (no embedding)…"):
+                try:
+                    total = container.corpus_builder_service.build(source)
+                    st.success(f"✅ Wrote **{total}** corpus file(s).")
+                    st.caption(
+                        f"🔒 PII redaction is **{'ON' if container.settings.pii.enabled else 'OFF'}** "
+                        f"for the active profile (`{selected_profile}`). "
+                        "Switch profiles in the sidebar and re-run to compare."
+                    )
+                    st.session_state["last_corpus_dir"] = container.settings.corpus.output_dir
+                except Exception as e:
+                    st.error(f"Corpus build failed: {e}")
+
+    corpus_dir = Path(
+        st.session_state.get("last_corpus_dir", container.settings.corpus.output_dir)
+    )
+    if corpus_dir.exists():
+        md_files = sorted(corpus_dir.rglob("*.md"))
+        if md_files:
+            selected_md = st.selectbox(
+                "View a generated corpus file",
+                options=md_files,
+                format_func=lambda p: str(p.relative_to(corpus_dir)),
+                key="corpus_file_viewer",
+            )
+            if selected_md:
+                st.code(selected_md.read_text(encoding="utf-8"), language="markdown")
 # ══════════════════════════════════════════════════════════════════════════════
 # WATCH TAB
 # ══════════════════════════════════════════════════════════════════════════════

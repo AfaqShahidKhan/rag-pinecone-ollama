@@ -5,6 +5,9 @@ Assembles application-layer services from adapters.
 Phase 5: injects relational_store and id_strategy into both ingestion services.
 Corpus step: injects corpus_writer into both ingestion services.
 Image/table step: injects image_extractor_resolver into both ingestion services.
+Test data step: adds create_corpus_builder_service() — a lightweight service
+that needs no embedding_provider/vector_store at all, so it works without
+any external service credentials configured.
 """
 
 from __future__ import annotations
@@ -12,6 +15,7 @@ from __future__ import annotations
 from typing import Callable
 
 from src.application.services import (
+    CorpusBuilderService,
     EvaluationService,
     IngestionService,
     RagQueryService,
@@ -62,6 +66,20 @@ class ServiceFactory:
             id_strategy=self._adapters.create_vector_id_strategy(),
             corpus_writer=self._adapters.create_corpus_writer(),
             image_extractor_resolver=self._adapters.create_image_extractor_resolver(),
+        )
+
+    def create_corpus_builder_service(self) -> CorpusBuilderService:
+        """
+        Deliberately never calls create_embedding_provider() or
+        create_vector_store() — this is what makes it usable with zero
+        external service credentials configured.
+        """
+        return CorpusBuilderService(
+            loader_resolver=self._adapters.create_document_loader_resolver(),
+            logger=self._logger_factory("corpus_builder_service"),
+            pre_processor=self._adapters.create_pre_processing_pipeline(),
+            image_extractor_resolver=self._adapters.create_image_extractor_resolver(),
+            corpus_writer=self._adapters.create_corpus_writer(),
         )
 
     def create_landing_zone_watcher(self, recursive: bool = False) -> ILandingZoneWatcher:
