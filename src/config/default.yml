@@ -73,7 +73,14 @@ image_extraction:
 logging:
   log_dir: ./logs
   filename: rag.log
+  exceptions_filename: exceptions.log # ERROR+ only, with error codes — segregated from the main log
   max_bytes: 10485760 # 10 MB — rotates automatically
   backup_count: 5 # keep last 5 rotated files
   console_level: INFO
   file_level: DEBUG # file captures more detail than the console
+
+validation:
+  enabled: true
+  readonly_check_enabled: true # reject files that are still writable (mid-copy/mid-write)
+  unprocessed_dir: ./data/unprocessed
+  max_replacement_char_ratio: 0.01 # content above this ratio of replacement chars is flagged as corrupt

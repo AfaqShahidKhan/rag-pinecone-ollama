@@ -17,3 +17,5 @@ config/
 data/images/
 
 logs/
+
+data/unprocessed/

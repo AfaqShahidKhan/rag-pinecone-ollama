@@ -38,6 +38,7 @@ from src.config.settings import (
     SemanticChunkingSettings,
     Settings,
     TableExtractionSettings,
+    ValidationSettings,
     VectorStoreType,
 )
 from src.factories.yaml_config_loader import YamlConfigLoader
@@ -173,9 +174,12 @@ class SettingsFactory:
                     self._value(yaml_config, "libreoffice.timeout_seconds", "LIBREOFFICE_TIMEOUT_SECONDS", 120)
                 ),
             ),
-            logging=LoggingSettings(
+           logging=LoggingSettings(
                 log_dir=self._value(yaml_config, "logging.log_dir", "LOG_DIR", "./logs"),
                 filename=self._value(yaml_config, "logging.filename", "LOG_FILENAME", "rag.log"),
+                exceptions_filename=self._value(
+                    yaml_config, "logging.exceptions_filename", "LOG_EXCEPTIONS_FILENAME", "exceptions.log"
+                ),
                 max_bytes=int(
                     self._value(yaml_config, "logging.max_bytes", "LOG_MAX_BYTES", 10 * 1024 * 1024)
                 ),
@@ -184,6 +188,22 @@ class SettingsFactory:
                 ),
                 console_level=self._value(yaml_config, "logging.console_level", "LOG_CONSOLE_LEVEL", "INFO"),
                 file_level=self._value(yaml_config, "logging.file_level", "LOG_FILE_LEVEL", "DEBUG"),
+            ),
+           validation=ValidationSettings(
+                enabled=self._bool(yaml_config, "validation.enabled", "VALIDATION_ENABLED", True),
+                readonly_check_enabled=self._bool(
+                    yaml_config, "validation.readonly_check_enabled",
+                    "VALIDATION_READONLY_CHECK_ENABLED", True,
+                ),
+                unprocessed_dir=self._value(
+                    yaml_config, "validation.unprocessed_dir", "VALIDATION_UNPROCESSED_DIR", "./data/unprocessed"
+                ),
+                max_replacement_char_ratio=float(
+                    self._value(
+                        yaml_config, "validation.max_replacement_char_ratio",
+                        "VALIDATION_MAX_REPLACEMENT_CHAR_RATIO", 0.01,
+                    )
+                ),
             ),
             vector_store_type=store_type,
             project_root=self._project_root,

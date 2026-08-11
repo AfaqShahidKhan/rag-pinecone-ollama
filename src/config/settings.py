@@ -192,20 +192,43 @@ class LoggingSettings:
     output — so ingestion/watch/ask runs can be traced after the fact,
     including crashes that happen with nobody watching the terminal.
 
-    log_dir / filename:  Where the log file lives. Rotates automatically —
-                          old data is never lost silently, just aged out.
-    max_bytes:            Size at which the current log file rotates.
-    backup_count:         How many rotated files to keep (oldest deleted first).
-    console_level:        Verbosity of what you see in the terminal.
-    file_level:            Verbosity written to disk — can be more detailed
-                           (e.g. DEBUG) than the console without cluttering it.
+    log_dir / filename:        Main log file (all levels down to file_level).
+    exceptions_filename:       Separate file — ONLY ERROR-and-above records,
+                                including their error code — so "what broke"
+                                is a focused, short file instead of buried in
+                                the full-detail main log.
+    max_bytes / backup_count:  Rotation settings, shared by both files.
+    console_level / file_level: Verbosity — console vs. the main log file.
     """
     log_dir: str = "./logs"
     filename: str = "rag.log"
+    exceptions_filename: str = "exceptions.log"
     max_bytes: int = 10 * 1024 * 1024  # 10 MB
     backup_count: int = 5
     console_level: str = "INFO"
     file_level: str = "DEBUG"
+
+@dataclass(frozen=True)
+class ValidationSettings:
+    """
+    Controls the pre-ingestion validation gate: the read-only file check,
+    structural content checks, and where rejected files get moved.
+
+    enabled:                    Master switch for the whole gate.
+    readonly_check_enabled:     Reject files that are still writable
+                                 (may be mid-copy/mid-write).
+    unprocessed_dir:            Root directory rejected files are moved
+                                 into, under a subfolder per rejection
+                                 reason (writable/, empty/, load_failed/,
+                                 invalid_content/).
+    max_replacement_char_ratio: Encoding-check threshold — content above
+                                 this ratio of U+FFFD replacement
+                                 characters is flagged as likely corrupt.
+    """
+    enabled: bool = True
+    readonly_check_enabled: bool = True
+    unprocessed_dir: str = "./data/unprocessed"
+    max_replacement_char_ratio: float = 0.01
 
 
 @dataclass(frozen=True)
@@ -226,6 +249,7 @@ class Settings:
     image_extraction: ImageExtractionSettings = field(default_factory=ImageExtractionSettings)
     libreoffice: LibreOfficeSettings = field(default_factory=LibreOfficeSettings)
     logging: LoggingSettings = field(default_factory=LoggingSettings)
+    validation: ValidationSettings = field(default_factory=ValidationSettings)
     vector_store_type: VectorStoreType = VectorStoreType.PINECONE
     project_root: Path = field(default_factory=Path.cwd)
 

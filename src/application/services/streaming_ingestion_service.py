@@ -2,11 +2,9 @@
 src/application/services/streaming_ingestion_service.py
 
 Processes documents one file at a time.
-Phase 5: optionally persists embedded chunks to the relational store.
-Corpus step: optionally writes pre-processed documents to a human-readable
-Markdown corpus, right after pre-processing and before chunking.
-Image/table step: extracts images right after loading a file, before
-pre-processing. PDF tables arrive already as Markdown inside page_content.
+Validation step: a FileValidationGate runs before AND after loading each
+file — same rejection/quarantine behavior as IngestionService, so the
+landing-zone watcher and batch ingest behave identically.
 """
 
 from __future__ import annotations
@@ -26,6 +24,7 @@ from src.domain.interfaces import (
     IVectorIdStrategy,
     IVectorStore,
 )
+from src.application.services.file_validation_gate import FileValidationGate
 
 
 class StreamingIngestionService:
@@ -41,6 +40,7 @@ class StreamingIngestionService:
         id_strategy: IVectorIdStrategy | None = None,
         corpus_writer: ICorpusWriter | None = None,
         image_extractor_resolver: IImageExtractorResolver | None = None,
+        validation_gate: FileValidationGate | None = None,
     ) -> None:
         self._loader_resolver = loader_resolver
         self._chunker = chunker
@@ -52,16 +52,30 @@ class StreamingIngestionService:
         self._id_strategy = id_strategy
         self._corpus_writer = corpus_writer
         self._image_extractor_resolver = image_extractor_resolver
+        self._validation_gate = validation_gate
         self._index_ready = False
 
     def ingest_file(self, path: Path) -> int:
+        if self._validation_gate and not self._validation_gate.check_file(path):
+            return 0
+
         loader = self._loader_resolver.resolve_for_file(path)
-        documents = loader.load(path)
+        try:
+            documents = loader.load(path)
+        except Exception as exc:
+            if self._validation_gate:
+                self._validation_gate.reject_load_exception(path, exc)
+            else:
+                self._logger.error(f"Failed to load '{path.name}': {exc}")
+            return 0
 
         if not documents:
             self._logger.warning(
                 f"StreamingIngestionService: '{path.name}' produced no documents."
             )
+            return 0
+
+        if self._validation_gate and not self._validation_gate.check_content(path, documents):
             return 0
 
         documents = self._extract_images(path, documents)
@@ -83,7 +97,6 @@ class StreamingIngestionService:
         self._ensure_index()
         total = self._vector_store.upsert(embedded)
 
-        # Phase 5: persist to relational store if enabled
         if self._relational_store and self._id_strategy:
             self._relational_store.ensure_schema()
             vector_ids = [self._id_strategy.generate_id(c) for c in embedded]

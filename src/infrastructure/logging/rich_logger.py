@@ -5,12 +5,18 @@ Concrete ILogger implementation backed by the `rich` + stdlib `logging`
 libraries. This is the only file in the project allowed to configure
 `logging.basicConfig` / instantiate `RichHandler` / `RotatingFileHandler`.
 
-Two handlers sit on the root logger: a RichHandler for the terminal, and a
-RotatingFileHandler that persists everything to disk (plain text, no ANSI
-codes) — so a crash during an unattended `watch` run, or a warning that
-scrolled past in a closed terminal, is still traceable afterward. Every
-RichLogger(name) is a child of the root logger, so both handlers apply
-automatically to every existing call site — no other file needed to change.
+Three handlers sit on the root logger:
+  - RichHandler:        terminal output.
+  - RotatingFileHandler: full detail (down to file_level) -> logs/rag.log.
+  - RotatingFileHandler: ERROR-and-above ONLY -> logs/exceptions.log — a
+    focused, short file for "what broke", separate from the full-detail
+    main log. Callers should format error messages via
+    src.domain.errors.format_error(code, message) so both the code and the
+    message land in this file together.
+
+Every RichLogger(name) is a child of the root logger, so all three handlers
+apply automatically to every existing call site — no other file needed to
+change.
 """
 
 from __future__ import annotations
@@ -55,25 +61,36 @@ class RichLogger(ILogger):
 
         log_dir = Path(settings.log_dir)
         log_dir.mkdir(parents=True, exist_ok=True)
-        file_handler = RotatingFileHandler(
+
+        file_formatter = logging.Formatter(
+            fmt="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        )
+
+        main_file_handler = RotatingFileHandler(
             filename=log_dir / settings.filename,
             maxBytes=settings.max_bytes,
             backupCount=settings.backup_count,
             encoding="utf-8",
         )
-        file_handler.setLevel(file_level)
-        file_handler.setFormatter(
-            logging.Formatter(
-                fmt="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
-                datefmt="%Y-%m-%d %H:%M:%S",
-            )
+        main_file_handler.setLevel(file_level)
+        main_file_handler.setFormatter(file_formatter)
+
+        exceptions_handler = RotatingFileHandler(
+            filename=log_dir / settings.exceptions_filename,
+            maxBytes=settings.max_bytes,
+            backupCount=settings.backup_count,
+            encoding="utf-8",
         )
+        exceptions_handler.setLevel(logging.ERROR)  # ONLY errors/exceptions land here
+        exceptions_handler.setFormatter(file_formatter)
 
         root = logging.getLogger()
         root.setLevel(min(console_level, file_level))
         root.handlers.clear()
         root.addHandler(console_handler)
-        root.addHandler(file_handler)
+        root.addHandler(main_file_handler)
+        root.addHandler(exceptions_handler)
 
         cls._configured = True
 

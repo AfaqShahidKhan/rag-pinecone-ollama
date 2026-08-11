@@ -18,6 +18,15 @@ from typing import Callable
 
 from rich.console import Console
 
+from src.domain.interfaces import IContentValidator, IFileValidator, IUnprocessedFileMover  # add to existing interfaces import block
+from src.infrastructure.validation import (
+    ContentNotEmptyValidator,
+    EncodingValidator,
+    FileNotEmptyValidator,
+    ReadOnlyFileValidator,
+    UnprocessedFileMover,
+)
+
 from src.config.settings import Settings, VectorStoreType
 from src.domain.interfaces import (
     IAnswerGenerator,
@@ -128,7 +137,27 @@ class AdapterFactory:
             loaders=self.create_document_loaders(),
             logger=self._logger_factory("loaders.resolver"),
         )
+    
+    # ── Validation ─────────────────────────────────────────────────────────────
 
+    def create_file_validators(self) -> list[IFileValidator]:
+        validators: list[IFileValidator] = [FileNotEmptyValidator()]
+        if self._settings.validation.readonly_check_enabled:
+            validators.append(ReadOnlyFileValidator())
+        return validators
+
+    def create_content_validators(self) -> list[IContentValidator]:
+        return [
+            ContentNotEmptyValidator(),
+            EncodingValidator(max_replacement_ratio=self._settings.validation.max_replacement_char_ratio),
+        ]
+
+    def create_unprocessed_mover(self) -> IUnprocessedFileMover:
+        return UnprocessedFileMover(
+            logger=self._logger_factory("validation.mover"),
+            unprocessed_dir=self._settings.validation.unprocessed_dir,
+        )
+    
     # ── Image extraction ───────────────────────────────────────────────────────
 
     def create_image_extractors(self) -> list[IImageExtractor]:
