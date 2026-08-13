@@ -163,6 +163,11 @@ with st.sidebar:
 
         new_pii = st.checkbox("Enable PII redaction", value=True, key="new_profile_pii")
         new_relational = st.checkbox("Enable relational store", value=True, key="new_profile_relational")
+        new_fallback = st.checkbox(
+            "Enable fallback extraction chain (PDF)", value=True, key="new_profile_fallback",
+            help="If off, PDF text/table/OCR extraction uses only the primary tool "
+                 "(pypdf/pdfplumber/tesseract) with no fallback to PyMuPDF/EasyOCR/PaddleOCR.",
+        )
 
         if st.button("💾 Save profile", key="save_new_profile"):
             if not new_name.strip():
@@ -181,6 +186,19 @@ with st.sidebar:
                         "db_path": f"./data/relational/{new_name.strip()}_chunks.db",
                     },
                     "corpus": {"output_dir": f"./data/corpus/{new_name.strip()}"},
+                    "document_loading": {   # ← ADD THIS BLOCK
+                        "pdf": {
+                            "text_extraction": {
+                                "fallbacks": ["pymupdf", "tesseract_ocr"] if new_fallback else []
+                            },
+                            "table_extraction": {
+                                "fallbacks": ["pymupdf_tables", "text_extraction"] if new_fallback else []
+                            },
+                            "ocr": {
+                                "fallbacks": ["easyocr", "paddleocr"] if new_fallback else []
+                            },
+                        }
+                    },
                 }
                 if new_db == VectorStoreType.CHROMA.value:
                     overrides["chroma"] = {
