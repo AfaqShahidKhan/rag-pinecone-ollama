@@ -40,6 +40,10 @@ from src.config.settings import (
     TableExtractionSettings,
     ValidationSettings,
     VectorStoreType,
+    DocumentLoadingSettings,
+    PdfTextExtractionSettings, 
+    PdfTableExtractionSettings,
+    PdfOcrSettings
 )
 from src.factories.yaml_config_loader import YamlConfigLoader
 
@@ -203,6 +207,52 @@ class SettingsFactory:
                         yaml_config, "validation.max_replacement_char_ratio",
                         "VALIDATION_MAX_REPLACEMENT_CHAR_RATIO", 0.01,
                     )
+                ),
+            ),
+           document_loading=DocumentLoadingSettings(
+                pdf_text_extraction=PdfTextExtractionSettings(
+                    primary=self._value(
+                        yaml_config, "document_loading.pdf.text_extraction.primary",
+                        "PDF_TEXT_PRIMARY", "pypdf",
+                    ),
+                    fallbacks=tuple(
+                        self._dig(yaml_config, "document_loading.pdf.text_extraction.fallbacks")
+                        or ["pymupdf", "tesseract_ocr"]
+                    ),
+                    confidence_threshold=float(self._value(
+                        yaml_config, "document_loading.pdf.text_extraction.confidence_threshold",
+                        "PDF_TEXT_CONFIDENCE_THRESHOLD", 0.7,
+                    )),
+                ),
+                pdf_table_extraction=PdfTableExtractionSettings(
+                    primary=self._value(
+                        yaml_config, "document_loading.pdf.table_extraction.primary",
+                        "PDF_TABLE_PRIMARY", "pdfplumber",
+                    ),
+                    fallbacks=tuple(
+                        self._dig(yaml_config, "document_loading.pdf.table_extraction.fallbacks")
+                        or ["pymupdf_tables", "text_extraction"]
+                    ),
+                    min_confidence=float(self._value(
+                        yaml_config, "document_loading.pdf.table_extraction.min_confidence",
+                        "PDF_TABLE_MIN_CONFIDENCE", 0.6,
+                    )),
+                ),
+                pdf_ocr=PdfOcrSettings(
+                    engine=self._value(
+                        yaml_config, "document_loading.pdf.ocr.engine", "PDF_OCR_ENGINE", "tesseract"
+                    ),
+                    fallbacks=tuple(
+                        self._dig(yaml_config, "document_loading.pdf.ocr.fallbacks")
+                        or ["easyocr", "paddleocr"]
+                    ),
+                    languages=tuple(
+                        self._dig(yaml_config, "document_loading.pdf.ocr.languages") or ["en"]
+                    ),
+                    confidence_threshold=float(self._value(
+                        yaml_config, "document_loading.pdf.ocr.confidence_threshold",
+                        "PDF_OCR_CONFIDENCE_THRESHOLD", 0.5,
+                    )),
                 ),
             ),
             vector_store_type=store_type,

@@ -88,6 +88,16 @@ from src.infrastructure.vector_store import (
     QdrantVectorStore,
     Sha256VectorIdStrategy,
 )
+from src.domain.interfaces import IOcrEngine, ITableExtractionStrategy, ITextExtractionStrategy  # add to existing interfaces import
+from src.infrastructure.extraction import (
+    NullTableExtractionStrategy,
+    OcrTextExtractionStrategy,
+    PdfplumberTableExtractionStrategy,
+    PyMuPdfTableExtractionStrategy,
+    PyMuPdfTextExtractionStrategy,
+    PypdfTextExtractionStrategy,
+)
+from src.infrastructure.ocr import EasyOcrEngine, PaddleOcrEngine, TesseractOcrEngine
 
 
 class AdapterFactory:
@@ -100,6 +110,43 @@ class AdapterFactory:
         self._settings = settings
         self._logger_factory = logger_factory
         self._vector_store_type = vector_store_type or settings.vector_store_type
+
+# ── Fallback chain resolution (PDF extraction) ──────────────────────────────
+
+    def _resolve_ocr_chain(self) -> list[tuple[str, IOcrEngine]]:
+        languages = self._settings.document_loading.pdf_ocr.languages
+        registry: dict[str, IOcrEngine] = {
+            "tesseract": TesseractOcrEngine(languages=languages),
+            "easyocr": EasyOcrEngine(languages=languages),
+            "paddleocr": PaddleOcrEngine(languages=languages),
+        }
+        ocr_settings = self._settings.document_loading.pdf_ocr
+        names = [ocr_settings.engine, *ocr_settings.fallbacks]
+        return [(name, registry[name]) for name in names if name in registry]
+
+    def _resolve_text_chain(self) -> list[tuple[str, ITextExtractionStrategy]]:
+        settings = self._settings.document_loading.pdf_text_extraction
+        registry: dict[str, ITextExtractionStrategy] = {
+            "pypdf": PypdfTextExtractionStrategy(),
+            "pymupdf": PyMuPdfTextExtractionStrategy(),
+            "tesseract_ocr": OcrTextExtractionStrategy(
+                ocr_engines=self._resolve_ocr_chain(),
+                ocr_confidence_threshold=self._settings.document_loading.pdf_ocr.confidence_threshold,
+                logger=self._logger_factory("extraction.ocr_text"),
+            ),
+        }
+        names = [settings.primary, *settings.fallbacks]
+        return [(name, registry[name]) for name in names if name in registry]
+
+    def _resolve_table_chain(self) -> list[tuple[str, ITableExtractionStrategy]]:
+        settings = self._settings.document_loading.pdf_table_extraction
+        registry: dict[str, ITableExtractionStrategy] = {
+            "pdfplumber": PdfplumberTableExtractionStrategy(),
+            "pymupdf_tables": PyMuPdfTableExtractionStrategy(),
+            "text_extraction": NullTableExtractionStrategy(),
+        }
+        names = [settings.primary, *settings.fallbacks]
+        return [(name, registry[name]) for name in names if name in registry]
 
     # ── Document loading ───────────────────────────────────────────────────────
 
@@ -116,6 +163,10 @@ class AdapterFactory:
             PdfDocumentLoader(
                 logger=self._logger_factory("loaders.pdf"),
                 table_extraction_settings=self._settings.table_extraction,
+                text_strategies=self._resolve_text_chain(),
+                table_strategies=self._resolve_table_chain(),
+                text_confidence_threshold=self._settings.document_loading.pdf_text_extraction.confidence_threshold,
+                table_min_confidence=self._settings.document_loading.pdf_table_extraction.min_confidence,
             ),
             DocxDocumentLoader(
                 logger=self._logger_factory("loaders.docx"),

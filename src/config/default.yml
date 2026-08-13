@@ -84,3 +84,19 @@ validation:
   readonly_check_enabled: true # reject files that are still writable (mid-copy/mid-write)
   unprocessed_dir: ./data/unprocessed
   max_replacement_char_ratio: 0.01 # content above this ratio of replacement chars is flagged as corrupt
+
+document_loading:
+  pdf:
+    text_extraction:
+      primary: pypdf
+      fallbacks: [pymupdf, tesseract_ocr]
+      confidence_threshold: 0.7
+    table_extraction:
+      primary: pdfplumber
+      fallbacks: [pymupdf_tables, text_extraction]
+      min_confidence: 0.6
+    ocr:
+      engine: tesseract
+      fallbacks: [easyocr, paddleocr]
+      languages: [en]
+      confidence_threshold: 0.5

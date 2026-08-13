@@ -14,6 +14,7 @@ from .relational_store import IRelationalStore
 from .corpus_writer import ICorpusWriter
 from .image_extractor import IImageExtractor, IImageExtractorResolver
 from .validation import IFileValidator, IContentValidator, IUnprocessedFileMover
+from .extraction_strategy import ITextExtractionStrategy, ITableExtractionStrategy, IOcrEngine
 
 __all__ = [
     "ILogger",
@@ -38,5 +39,8 @@ __all__ = [
     "IImageExtractorResolver",
     "IFileValidator",
     "IContentValidator",
-    "IUnprocessedFileMover",
+    "IUnprocessedFileMover",  
+    "ITextExtractionStrategy",
+    "ITableExtractionStrategy",
+    "IOcrEngine",
 ]

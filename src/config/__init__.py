@@ -18,6 +18,10 @@ from .settings import (
     LibreOfficeSettings,
     LoggingSettings,
     ValidationSettings,
+    DocumentLoadingSettings, 
+    PdfTextExtractionSettings,
+    PdfTableExtractionSettings,
+    PdfOcrSettings
 )
 
 __all__ = [
@@ -40,4 +44,8 @@ __all__ = [
     "LibreOfficeSettings",
     "LoggingSettings",
     "ValidationSettings",
+    "DocumentLoadingSettings",
+    "PdfTextExtractionSettings",
+    "PdfTableExtractionSettings",
+    "PdfOcrSettings"
 ]

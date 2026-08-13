@@ -230,6 +230,40 @@ class ValidationSettings:
     unprocessed_dir: str = "./data/unprocessed"
     max_replacement_char_ratio: float = 0.01
 
+@dataclass(frozen=True)
+class PdfTextExtractionSettings:
+    primary: str = "pypdf"
+    fallbacks: tuple[str, ...] = ("pymupdf", "tesseract_ocr")
+    confidence_threshold: float = 0.7
+
+
+@dataclass(frozen=True)
+class PdfTableExtractionSettings:
+    primary: str = "pdfplumber"
+    fallbacks: tuple[str, ...] = ("pymupdf_tables", "text_extraction")
+    min_confidence: float = 0.6
+
+
+@dataclass(frozen=True)
+class PdfOcrSettings:
+    engine: str = "tesseract"
+    fallbacks: tuple[str, ...] = ("easyocr", "paddleocr")
+    languages: tuple[str, ...] = ("en",)
+    confidence_threshold: float = 0.5
+
+
+@dataclass(frozen=True)
+class DocumentLoadingSettings:
+    """
+    Fallback-chain configuration for PDF extraction. Each chain tries its
+    'primary' strategy first; if the result's confidence is below the
+    threshold (or the strategy raises), it falls through to the next name
+    in 'fallbacks', in order.
+    """
+    pdf_text_extraction: PdfTextExtractionSettings = field(default_factory=PdfTextExtractionSettings)
+    pdf_table_extraction: PdfTableExtractionSettings = field(default_factory=PdfTableExtractionSettings)
+    pdf_ocr: PdfOcrSettings = field(default_factory=PdfOcrSettings)
+
 
 @dataclass(frozen=True)
 class Settings:
@@ -250,6 +284,7 @@ class Settings:
     libreoffice: LibreOfficeSettings = field(default_factory=LibreOfficeSettings)
     logging: LoggingSettings = field(default_factory=LoggingSettings)
     validation: ValidationSettings = field(default_factory=ValidationSettings)
+    document_loading: DocumentLoadingSettings = field(default_factory=DocumentLoadingSettings)
     vector_store_type: VectorStoreType = VectorStoreType.PINECONE
     project_root: Path = field(default_factory=Path.cwd)
 

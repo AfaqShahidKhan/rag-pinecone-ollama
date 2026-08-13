@@ -34,7 +34,8 @@ class ErrorCode(str, Enum):
     # LOAD-xxx — document loader failures
     LOAD_UNSUPPORTED_EXTENSION = "LOAD-001"
     LOAD_FAILED = "LOAD-002"
-
+    LOAD_FALLBACK_USED = "LOAD-003"
+    LOAD_ALL_STRATEGIES_EXHAUSTED = "LOAD-004"
     # VALID-xxx — post-load content validation
     VALID_EMPTY_CONTENT = "VALID-001"
     VALID_ENCODING_ERROR = "VALID-002"

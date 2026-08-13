@@ -235,7 +235,9 @@ with tab_ask:
     st.header("Ask a question")
 
     db_key = selected_db.value
-    msg_key = f"messages_{db_key}"
+    profile_key = selected_profile.replace(" ", "_") if selected_profile else "default"
+    msg_key = f"messages_{db_key}_{profile_key}"
+    
     if msg_key not in st.session_state:
         st.session_state[msg_key] = []
 
@@ -274,6 +276,7 @@ with tab_ask:
                         project_root=Path(__file__).parent,
                         token_sink=sink,
                         vector_store_type=selected_db,
+                        config_file=selected_config_file,
                     )
                     resp = c.rag_query_service.ask(prompt, top_k=top_k, stream=True)
                     result_box.append(resp)
@@ -321,6 +324,7 @@ with tab_ask:
                     {
                         "source": s.source, "page": s.page,
                         "chunk_index": s.chunk_index, "score": s.score,
+                        "pii_redacted": getattr(s, "pii_redacted", False),
                     }
                     for s in response.sources
                 ]
@@ -331,7 +335,7 @@ with tab_ask:
                 })
 
     if st.session_state.get(msg_key):
-        if st.button("Clear chat", key=f"clear_{db_key}"):
+        if st.button("Clear chat", key=f"clear_{db_key}_{profile_key}"):
             st.session_state[msg_key] = []
             st.rerun()
 
@@ -740,9 +744,10 @@ with tab_db:
 with tab_settings:
     st.header("Pipeline Settings")
     st.caption(
-        "These settings are read from `.env` at startup. "
-        "Changes here are informational only — edit `.env` and restart to apply."
-    )
+    "Settings are loaded from `config/default.yml`, overridden by the active "
+    "profile, then by `.env`. Changes here are informational only — "
+    "edit your profile YAML or `.env` and restart to apply."
+   )
 
     # ── PII ───────────────────────────────────────────────────────────────────
     st.subheader("🔒 PII Anonymization")

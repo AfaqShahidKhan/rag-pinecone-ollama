@@ -75,3 +75,14 @@ class EvalResult:
     latency_seconds: float
     top_score: float
     sources: list[SearchResult] = field(default_factory=list)
+
+@dataclass(frozen=True)
+class ExtractionAttempt:
+    """
+    Result of one extraction strategy's attempt (text, table, or OCR) on a
+    single page. confidence is a 0.0-1.0 self-computed trust score — none
+    of pypdf/pdfplumber/PyMuPDF/OCR engines report one themselves.
+    """
+    content: str
+    confidence: float
+    strategy_name: str
