@@ -215,10 +215,10 @@ class SettingsFactory:
                         yaml_config, "document_loading.pdf.text_extraction.primary",
                         "PDF_TEXT_PRIMARY", "pypdf",
                     ),
-                    fallbacks=tuple(
-                        self._dig(yaml_config, "document_loading.pdf.text_extraction.fallbacks")
-                        or ["pymupdf", "tesseract_ocr"]
-                    ),
+                    fallbacks=tuple(self._dig_list(
+                        yaml_config, "document_loading.pdf.text_extraction.fallbacks",
+                        ["pymupdf", "tesseract_ocr"],
+                    )),
                     confidence_threshold=float(self._value(
                         yaml_config, "document_loading.pdf.text_extraction.confidence_threshold",
                         "PDF_TEXT_CONFIDENCE_THRESHOLD", 0.7,
@@ -229,10 +229,10 @@ class SettingsFactory:
                         yaml_config, "document_loading.pdf.table_extraction.primary",
                         "PDF_TABLE_PRIMARY", "pdfplumber",
                     ),
-                    fallbacks=tuple(
-                        self._dig(yaml_config, "document_loading.pdf.table_extraction.fallbacks")
-                        or ["pymupdf_tables", "text_extraction"]
-                    ),
+                    fallbacks=tuple(self._dig_list(
+                        yaml_config, "document_loading.pdf.table_extraction.fallbacks",
+                        ["pymupdf_tables", "text_extraction"],
+                    )),
                     min_confidence=float(self._value(
                         yaml_config, "document_loading.pdf.table_extraction.min_confidence",
                         "PDF_TABLE_MIN_CONFIDENCE", 0.6,
@@ -242,13 +242,13 @@ class SettingsFactory:
                     engine=self._value(
                         yaml_config, "document_loading.pdf.ocr.engine", "PDF_OCR_ENGINE", "tesseract"
                     ),
-                    fallbacks=tuple(
-                        self._dig(yaml_config, "document_loading.pdf.ocr.fallbacks")
-                        or ["easyocr", "paddleocr"]
-                    ),
-                    languages=tuple(
-                        self._dig(yaml_config, "document_loading.pdf.ocr.languages") or ["en"]
-                    ),
+                    fallbacks=tuple(self._dig_list(
+                        yaml_config, "document_loading.pdf.ocr.fallbacks",
+                        ["easyocr", "paddleocr"],
+                    )),
+                    languages=tuple(self._dig_list(
+                        yaml_config, "document_loading.pdf.ocr.languages", ["en"]
+                    )),
                     confidence_threshold=float(self._value(
                         yaml_config, "document_loading.pdf.ocr.confidence_threshold",
                         "PDF_OCR_CONFIDENCE_THRESHOLD", 0.5,
@@ -284,6 +284,18 @@ class SettingsFactory:
         if yaml_value is not None:
             return str(yaml_value).strip().lower() == "true"
         return self._optional(env_key, str(default)).lower() == "true"
+    
+    @staticmethod
+    def _dig_list(yaml_config: dict, dotted_key: str, default: list) -> list:
+        """
+        Like _dig(), but distinguishes 'key absent' from 'key explicitly set
+        to an empty list' — plain `or` can't do this, since [] is falsy and
+        would wrongly fall back to the default (breaking any profile that
+        intentionally disables a fallback chain via `fallbacks: []`).
+        """
+        value = SettingsFactory._dig(yaml_config, dotted_key)
+        return value if value is not None else default
+    
 
     @staticmethod
     def _require(key: str) -> str:

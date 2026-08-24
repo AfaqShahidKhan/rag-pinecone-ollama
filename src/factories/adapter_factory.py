@@ -21,9 +21,9 @@ from rich.console import Console
 from src.domain.interfaces import IContentValidator, IFileValidator, IUnprocessedFileMover  # add to existing interfaces import block
 from src.infrastructure.validation import (
     ContentNotEmptyValidator,
+    DocumentProtectionValidator,
     EncodingValidator,
     FileNotEmptyValidator,
-    ReadOnlyFileValidator,
     UnprocessedFileMover,
 )
 
@@ -194,7 +194,7 @@ class AdapterFactory:
     def create_file_validators(self) -> list[IFileValidator]:
         validators: list[IFileValidator] = [FileNotEmptyValidator()]
         if self._settings.validation.readonly_check_enabled:
-            validators.append(ReadOnlyFileValidator())
+            validators.append(DocumentProtectionValidator())
         return validators
 
     def create_content_validators(self) -> list[IContentValidator]:

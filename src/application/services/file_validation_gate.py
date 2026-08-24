@@ -21,7 +21,7 @@ from src.domain.errors import ErrorCode, PipelineError, format_error
 from src.domain.interfaces import IContentValidator, IFileValidator, ILogger, IUnprocessedFileMover
 
 _REASON_BY_CODE: dict[ErrorCode, str] = {
-    ErrorCode.FILE_NOT_READONLY: "writable",
+    ErrorCode.FILE_NOT_READONLY: "unprotected",
     ErrorCode.FILE_EMPTY: "empty",
     ErrorCode.LOAD_FAILED: "load_failed",
     ErrorCode.VALID_EMPTY_CONTENT: "invalid_content",

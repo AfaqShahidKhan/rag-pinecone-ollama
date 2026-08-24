@@ -50,6 +50,40 @@ DB_OPTIONS = {
     },
 }
 
+# ── Profile presets (Speed / Quality / Strict) ──────────────────────────────────
+PROFILE_PRESETS = {
+    "🚀 Speed": {
+        "document_loading": {
+            "pdf": {
+                "text_extraction": {"fallbacks": [], "confidence_threshold": 0.5},
+                "table_extraction": {"fallbacks": [], "min_confidence": 0.5},
+                "ocr": {"fallbacks": [], "confidence_threshold": 0.5},
+            }
+        },
+        "validation": {"max_replacement_char_ratio": 0.02},
+    },
+    "⚖️ Quality": {
+        "document_loading": {
+            "pdf": {
+                "text_extraction": {"fallbacks": ["pymupdf", "tesseract_ocr"], "confidence_threshold": 0.7},
+                "table_extraction": {"fallbacks": ["pymupdf_tables", "text_extraction"], "min_confidence": 0.6},
+                "ocr": {"fallbacks": ["easyocr", "paddleocr"], "confidence_threshold": 0.5},
+            }
+        },
+        "validation": {"max_replacement_char_ratio": 0.01},
+    },
+    "🎯 Strict": {
+        "document_loading": {
+            "pdf": {
+                "text_extraction": {"fallbacks": ["pymupdf", "tesseract_ocr"], "confidence_threshold": 0.85},
+                "table_extraction": {"fallbacks": ["pymupdf_tables", "text_extraction"], "min_confidence": 0.7},
+                "ocr": {"fallbacks": ["easyocr", "paddleocr"], "confidence_threshold": 0.6},
+            }
+        },
+        "validation": {"max_replacement_char_ratio": 0.005},
+    },
+}
+
 # ── Config profiles ─────────────────────────────────────────────────────────────
 CONFIG_DIR = Path(__file__).parent / "config"
 
@@ -163,10 +197,18 @@ with st.sidebar:
 
         new_pii = st.checkbox("Enable PII redaction", value=True, key="new_profile_pii")
         new_relational = st.checkbox("Enable relational store", value=True, key="new_profile_relational")
-        new_fallback = st.checkbox(
-            "Enable fallback extraction chain (PDF)", value=True, key="new_profile_fallback",
-            help="If off, PDF text/table/OCR extraction uses only the primary tool "
-                 "(pypdf/pdfplumber/tesseract) with no fallback to PyMuPDF/EasyOCR/PaddleOCR.",
+        new_profile_type = st.radio(
+            "Profile type",
+            options=list(PROFILE_PRESETS.keys()),
+            index=1,  # Quality — today's existing defaults
+            key="new_profile_type",
+            horizontal=True,
+            help=(
+                "Speed: skips the fallback chain entirely — primary extractor only. "
+                "Quality: today's defaults — full fallback chain, standard thresholds. "
+                "Strict: full fallback chain with stricter confidence thresholds, so "
+                "borderline pages get more scrutiny and marginal content is flagged more readily."
+            ),
         )
 
         if st.button("💾 Save profile", key="save_new_profile"):
@@ -174,6 +216,7 @@ with st.sidebar:
                 st.error("Enter a profile name first.")
             else:
                 overrides = {
+                    "profile_type": new_profile_type,  # informational only — not read by SettingsFactory
                     "vector_store_type": new_db,
                     "chunking": {
                         "chunk_size": int(new_chunk_size),
@@ -186,19 +229,7 @@ with st.sidebar:
                         "db_path": f"./data/relational/{new_name.strip()}_chunks.db",
                     },
                     "corpus": {"output_dir": f"./data/corpus/{new_name.strip()}"},
-                    "document_loading": {   # ← ADD THIS BLOCK
-                        "pdf": {
-                            "text_extraction": {
-                                "fallbacks": ["pymupdf", "tesseract_ocr"] if new_fallback else []
-                            },
-                            "table_extraction": {
-                                "fallbacks": ["pymupdf_tables", "text_extraction"] if new_fallback else []
-                            },
-                            "ocr": {
-                                "fallbacks": ["easyocr", "paddleocr"] if new_fallback else []
-                            },
-                        }
-                    },
+                    **PROFILE_PRESETS[new_profile_type],
                 }
                 if new_db == VectorStoreType.CHROMA.value:
                     overrides["chroma"] = {
