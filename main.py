@@ -4,11 +4,19 @@ main.py
 CLI entry point. Builds the Container (composition root) once, then
 dispatches to the requested service.
 Phase 4: adds the `watch` command for event-driven landing zone ingestion.
+Step 3: adds `--config` for per-user YAML config profiles.
+Logging step: wraps dispatch in a top-level try/except so an uncaught
+exception is always logged (with traceback) to the rotating file before
+the process exits.
+Test data step: adds `build-corpus` — landing zone -> corpus only, no
+embedding/vector store needed, for teammates testing document parsing
+without any external service credentials configured.
 """
 
 from __future__ import annotations
 
 import argparse
+import logging
 import sys
 import time
 from pathlib import Path
@@ -22,13 +30,34 @@ def _print_token(token: str) -> None:
 
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="rag", description="RAG over Pinecone CLI")
+    parser.add_argument(
+        "--config", dest="config_file", default=None,
+        help=(
+            "Path to a per-user YAML config (e.g. config/user_afaq.yml). "
+            "Overrides config/default.yml, which overrides .env / defaults."
+        ),
+    )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     # ingest (batch)
     ingest_parser = subparsers.add_parser("ingest", help="Ingest documents into the vector store")
     ingest_parser.add_argument(
         "source", nargs="?", default=None,
-        help="Path to a file or directory. Defaults to <project_root>/data/raw.",
+        help="Path to a file or directory. Defaults to <project_root>/data/landing_zone.",
+    )
+
+    # build-corpus (parsing-only test path — no Ollama/vector store needed)
+    build_corpus_parser = subparsers.add_parser(
+        "build-corpus",
+        help=(
+            "Parse landing-zone documents and write the human-readable corpus only "
+            "(no embedding or vector store connection needed) — for testing document "
+            "parsing/table/image extraction without any external service credentials."
+        ),
+    )
+    build_corpus_parser.add_argument(
+        "source", nargs="?", default=None,
+        help="Path to a file or directory. Defaults to <project_root>/data/landing_zone.",
     )
 
     # ask
@@ -53,7 +82,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
     watch_parser.add_argument(
         "source", nargs="?", default=None,
-        help="Directory to watch. Defaults to <project_root>/data/raw.",
+        help="Directory to watch. Defaults to <project_root>/data/landing_zone.",
     )
     watch_parser.add_argument(
         "--recursive", action="store_true",
@@ -63,16 +92,17 @@ def build_arg_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: list[str] | None = None) -> int:
-    parser = build_arg_parser()
-    args = parser.parse_args(argv)
-
-    container = Container.bootstrap(token_sink=_print_token)
-
+def _dispatch(container: Container, args: argparse.Namespace) -> int:
     if args.command == "ingest":
         source = Path(args.source) if args.source else container.settings.data_raw
         total = container.ingestion_service.ingest_path(source)
         print(f"Indexed {total} vectors.")
+        return 0
+
+    if args.command == "build-corpus":
+        source = Path(args.source) if args.source else container.settings.data_raw
+        total = container.corpus_builder_service.build(source)
+        print(f"Wrote {total} corpus file(s) to '{container.settings.corpus.output_dir}'.")
         return 0
 
     if args.command == "ask":
@@ -100,7 +130,6 @@ def main(argv: list[str] | None = None) -> int:
             print(f"Error: directory not found: '{source}'")
             return 1
 
-        # Build a dedicated watcher (with recursive flag if requested)
         watcher = container._services.create_landing_zone_watcher(
             recursive=getattr(args, "recursive", False)
         )
@@ -118,8 +147,20 @@ def main(argv: list[str] | None = None) -> int:
 
         return 0
 
-    parser.print_help()
     return 1
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_arg_parser()
+    args = parser.parse_args(argv)
+
+    try:
+        container = Container.bootstrap(token_sink=_print_token, config_file=args.config_file)
+        return _dispatch(container, args)
+    except Exception:
+        logging.getLogger("main").exception("Unhandled exception during CLI execution.")
+        print("\nAn unexpected error occurred. See logs/rag.log for the full traceback.")
+        return 1
 
 
 if __name__ == "__main__":

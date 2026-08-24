@@ -1,7 +1,7 @@
 """
 src/factories/sdk_client_factory.py
 
-The single place in the codebase allowed to construct raw third-party SDK
+The single place in the codebase allowed to construct landing_zone third-party SDK
 client objects (pinecone.Pinecone, ollama.Client). Adapters receive these
 clients via constructor injection — they never build their own.
 """

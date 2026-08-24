@@ -10,6 +10,18 @@ from .settings import (
     RetrievalSettings,
     PromptSettings,
     IngestionSettings,
+    PiiSettings,
+    RelationalStoreSettings,
+    CorpusSettings,
+    TableExtractionSettings,
+    ImageExtractionSettings,
+    LibreOfficeSettings,
+    LoggingSettings,
+    ValidationSettings,
+    DocumentLoadingSettings, 
+    PdfTextExtractionSettings,
+    PdfTableExtractionSettings,
+    PdfOcrSettings
 )
 
 __all__ = [
@@ -24,4 +36,16 @@ __all__ = [
     "RetrievalSettings",
     "PromptSettings",
     "IngestionSettings",
+    "PiiSettings",
+    "RelationalStoreSettings",
+    "CorpusSettings",
+    "TableExtractionSettings",
+    "ImageExtractionSettings",
+    "LibreOfficeSettings",
+    "LoggingSettings",
+    "ValidationSettings",
+    "DocumentLoadingSettings",
+    "PdfTextExtractionSettings",
+    "PdfTableExtractionSettings",
+    "PdfOcrSettings"
 ]

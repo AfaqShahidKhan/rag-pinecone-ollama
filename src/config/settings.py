@@ -2,7 +2,6 @@
 src/config/settings.py
 
 Pure configuration value objects. No module-level singleton instance.
-Built once in the composition root via SettingsFactory, injected everywhere.
 """
 
 from __future__ import annotations
@@ -12,15 +11,11 @@ from enum import Enum
 from pathlib import Path
 
 
-# ── Vector store selector ────────────────────────────────────────────────────
-
 class VectorStoreType(str, Enum):
     PINECONE = "pinecone"
     CHROMA   = "chroma"
     QDRANT   = "qdrant"
 
-
-# ── Per-database settings ────────────────────────────────────────────────────
 
 @dataclass(frozen=True)
 class PineconeSettings:
@@ -43,8 +38,6 @@ class QdrantSettings:
     collection_name: str = "rag-collection"
 
 
-# ── Model settings ────────────────────────────────────────────────────────────
-
 @dataclass(frozen=True)
 class OllamaSettings:
     base_url: str = "http://localhost:11434"
@@ -53,32 +46,26 @@ class OllamaSettings:
     embedding_dimension: int = 768
 
 
-# ── Chunking settings ─────────────────────────────────────────────────────────
-
 @dataclass(frozen=True)
 class ChunkingSettings:
     chunk_size: int = 512
     chunk_overlap: int = 64
+    max_table_chunk_chars: int = 4000
+    """
+    Tables (Markdown, from PdfDocumentLoader/DocxDocumentLoader/PptxDocumentLoader)
+    up to this size are kept as ONE atomic chunk, regardless of chunk_size —
+    a whole table with its header intact beats a "correctly sized" fragment
+    that's missing its column labels. Tables larger than this get split by
+    rows, with the header + separator row repeated at the top of every part.
+    """
 
 
 @dataclass(frozen=True)
 class SemanticChunkingSettings:
-    """
-    Settings for SemanticChunker (Phase 3).
-
-    similarity_threshold:    Cosine similarity below which a sentence
-                             boundary becomes a chunk boundary.
-                             Lower = fewer, larger chunks.
-                             Higher = more, smaller chunks.
-    min_sentences_per_chunk: Prevents micro-chunks from very short segments.
-    max_sentences_per_chunk: Hard ceiling to prevent runaway chunk sizes.
-    """
     similarity_threshold: float = 0.75
     min_sentences_per_chunk: int = 2
     max_sentences_per_chunk: int = 15
 
-
-# ── Other settings ────────────────────────────────────────────────────────────
 
 @dataclass(frozen=True)
 class RetrievalSettings:
@@ -93,7 +80,7 @@ class PromptSettings:
         "Answer the user's question using ONLY the information in the context "
         "provided below.\n"
         "Follow these rules strictly:\n"
-        "- Write a clear, complete answer in your own words — do NOT copy raw "
+        "- Write a clear, complete answer in your own words — do NOT copy landing_zone "
         "text from the context\n"
         "- Use 2-3 sentences unless the answer is a simple fact\n"
         "- If the answer requires explaining a reason or motivation, explain it fully\n"
@@ -112,7 +99,171 @@ class IngestionSettings:
     docx_pseudo_page_chars: int = 3000
 
 
-# ── Root settings object ──────────────────────────────────────────────────────
+@dataclass(frozen=True)
+class PiiSettings:
+    """
+    Controls PII anonymization in the pre-processing pipeline.
+
+    enabled:          Set to False to skip PII redaction entirely.
+    enabled_types:    Whitelist of entity labels to redact. Empty list = all types.
+                      Supported: EMAIL, URL, CNIC, IBAN, CREDIT_CARD,
+                                 PHONE_PK, PHONE_INTL, IP_ADDRESS, DATE_OF_BIRTH
+    """
+    enabled: bool = True
+    enabled_types: tuple[str, ...] = ()   # empty = all types active
+
+
+@dataclass(frozen=True)
+class RelationalStoreSettings:
+    """
+    Controls the SQLite relational store for chunk persistence.
+
+    enabled:  Set to False to skip relational store writes.
+    db_path:  Path to the SQLite database file.
+    """
+    enabled: bool = True
+    db_path: str = "./data/relational/rag_chunks.db"
+
+
+@dataclass(frozen=True)
+class CorpusSettings:
+    """
+    Controls the human-readable Markdown corpus writer.
+
+    Runs after pre-processing (clean, PII-redacted text) and before chunking,
+    so the corpus always reflects exactly what feeds the chunker — regardless
+    of chunk size, chunking strategy, or vector store choice.
+
+    enabled:     Set to False to skip corpus writing entirely.
+    output_dir:  Root directory. Each source document gets its own subfolder
+                 containing one Markdown file per page/section.
+    """
+    enabled: bool = True
+    output_dir: str = "./data/corpus"
+
+
+@dataclass(frozen=True)
+class TableExtractionSettings:
+    """
+    Controls Markdown table extraction from PDFs via pdfplumber.
+
+    DOCX/PPTX table extraction is always on — both already use their
+    respective libraries (python-docx / python-pptx) regardless of this flag.
+
+    enabled:  Set to False to skip PDF table detection/extraction (pdfplumber
+              won't be invoked at all — pypdf text extraction still runs).
+    """
+    enabled: bool = True
+
+
+@dataclass(frozen=True)
+class ImageExtractionSettings:
+    """
+    Controls extraction of embedded images from PDF/DOCX files to disk.
+
+    enabled:     Set to False to skip image extraction entirely.
+    output_dir:  Root directory. Each source document gets its own subfolder
+                 of extracted images.
+    """
+    enabled: bool = True
+    output_dir: str = "./data/images"
+
+
+@dataclass(frozen=True)
+class LibreOfficeSettings:
+    """
+    Controls legacy Office format conversion (.ppt -> .pptx) via LibreOffice
+    headless mode. Requires LibreOffice installed separately — this is a
+    system dependency, not a Python package.
+
+    executable_path:  Path to the soffice/soffice.exe binary. "soffice"
+                       works if it's on PATH; otherwise give the full path
+                       (Windows default: C:\\Program Files\\LibreOffice\\program\\soffice.exe).
+    timeout_seconds:   Max time to wait for a single file's conversion.
+    """
+    executable_path: str = "soffice"
+    timeout_seconds: int = 120
+
+
+@dataclass(frozen=True)
+class LoggingSettings:
+    """
+    Controls persistent file logging, in addition to the existing console
+    output — so ingestion/watch/ask runs can be traced after the fact,
+    including crashes that happen with nobody watching the terminal.
+
+    log_dir / filename:        Main log file (all levels down to file_level).
+    exceptions_filename:       Separate file — ONLY ERROR-and-above records,
+                                including their error code — so "what broke"
+                                is a focused, short file instead of buried in
+                                the full-detail main log.
+    max_bytes / backup_count:  Rotation settings, shared by both files.
+    console_level / file_level: Verbosity — console vs. the main log file.
+    """
+    log_dir: str = "./logs"
+    filename: str = "rag.log"
+    exceptions_filename: str = "exceptions.log"
+    max_bytes: int = 10 * 1024 * 1024  # 10 MB
+    backup_count: int = 5
+    console_level: str = "INFO"
+    file_level: str = "DEBUG"
+
+@dataclass(frozen=True)
+class ValidationSettings:
+    """
+    Controls the pre-ingestion validation gate: the read-only file check,
+    structural content checks, and where rejected files get moved.
+
+    enabled:                    Master switch for the whole gate.
+    readonly_check_enabled:     Reject files that are still writable
+                                 (may be mid-copy/mid-write).
+    unprocessed_dir:            Root directory rejected files are moved
+                                 into, under a subfolder per rejection
+                                 reason (writable/, empty/, load_failed/,
+                                 invalid_content/).
+    max_replacement_char_ratio: Encoding-check threshold — content above
+                                 this ratio of U+FFFD replacement
+                                 characters is flagged as likely corrupt.
+    """
+    enabled: bool = True
+    readonly_check_enabled: bool = True
+    unprocessed_dir: str = "./data/unprocessed"
+    max_replacement_char_ratio: float = 0.01
+
+@dataclass(frozen=True)
+class PdfTextExtractionSettings:
+    primary: str = "pypdf"
+    fallbacks: tuple[str, ...] = ("pymupdf", "tesseract_ocr")
+    confidence_threshold: float = 0.7
+
+
+@dataclass(frozen=True)
+class PdfTableExtractionSettings:
+    primary: str = "pdfplumber"
+    fallbacks: tuple[str, ...] = ("pymupdf_tables", "text_extraction")
+    min_confidence: float = 0.6
+
+
+@dataclass(frozen=True)
+class PdfOcrSettings:
+    engine: str = "tesseract"
+    fallbacks: tuple[str, ...] = ("easyocr", "paddleocr")
+    languages: tuple[str, ...] = ("en",)
+    confidence_threshold: float = 0.5
+
+
+@dataclass(frozen=True)
+class DocumentLoadingSettings:
+    """
+    Fallback-chain configuration for PDF extraction. Each chain tries its
+    'primary' strategy first; if the result's confidence is below the
+    threshold (or the strategy raises), it falls through to the next name
+    in 'fallbacks', in order.
+    """
+    pdf_text_extraction: PdfTextExtractionSettings = field(default_factory=PdfTextExtractionSettings)
+    pdf_table_extraction: PdfTableExtractionSettings = field(default_factory=PdfTableExtractionSettings)
+    pdf_ocr: PdfOcrSettings = field(default_factory=PdfOcrSettings)
+
 
 @dataclass(frozen=True)
 class Settings:
@@ -125,12 +276,21 @@ class Settings:
     ingestion: IngestionSettings = field(default_factory=IngestionSettings)
     chroma: ChromaSettings = field(default_factory=ChromaSettings)
     qdrant: QdrantSettings = field(default_factory=QdrantSettings)
+    pii: PiiSettings = field(default_factory=PiiSettings)
+    relational_store: RelationalStoreSettings = field(default_factory=RelationalStoreSettings)
+    corpus: CorpusSettings = field(default_factory=CorpusSettings)
+    table_extraction: TableExtractionSettings = field(default_factory=TableExtractionSettings)
+    image_extraction: ImageExtractionSettings = field(default_factory=ImageExtractionSettings)
+    libreoffice: LibreOfficeSettings = field(default_factory=LibreOfficeSettings)
+    logging: LoggingSettings = field(default_factory=LoggingSettings)
+    validation: ValidationSettings = field(default_factory=ValidationSettings)
+    document_loading: DocumentLoadingSettings = field(default_factory=DocumentLoadingSettings)
     vector_store_type: VectorStoreType = VectorStoreType.PINECONE
     project_root: Path = field(default_factory=Path.cwd)
 
     @property
     def data_raw(self) -> Path:
-        return self.project_root / "data" / "raw"
+        return self.project_root / "data" / "landing_zone"
 
     @property
     def data_processed(self) -> Path:

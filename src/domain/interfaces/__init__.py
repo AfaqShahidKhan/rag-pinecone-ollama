@@ -9,6 +9,12 @@ from .answer_generator import IAnswerGenerator
 from .eval_reporter import IEvalReporter
 from .pre_processor import IPreProcessor, IDocumentProcessor
 from .landing_zone import ILandingZoneWatcher, IIngestionAdapter
+from .pii_anonymizer import IPiiAnonymizer, RedactionResult
+from .relational_store import IRelationalStore
+from .corpus_writer import ICorpusWriter
+from .image_extractor import IImageExtractor, IImageExtractorResolver
+from .validation import IFileValidator, IContentValidator, IUnprocessedFileMover
+from .extraction_strategy import ITextExtractionStrategy, ITableExtractionStrategy, IOcrEngine
 
 __all__ = [
     "ILogger",
@@ -25,4 +31,16 @@ __all__ = [
     "IDocumentProcessor",
     "ILandingZoneWatcher",
     "IIngestionAdapter",
+    "IPiiAnonymizer",
+    "RedactionResult",
+    "IRelationalStore",
+    "ICorpusWriter",
+    "IImageExtractor",
+    "IImageExtractorResolver",
+    "IFileValidator",
+    "IContentValidator",
+    "IUnprocessedFileMover",  
+    "ITextExtractionStrategy",
+    "ITableExtractionStrategy",
+    "IOcrEngine",
 ]

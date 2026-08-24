@@ -1,0 +1,28 @@
+# config/user_template.yml
+#
+# Copy this file to config/user_<name>.yml and edit only the values you
+# want to override for that user. Any key you delete/omit falls back to
+# config/default.yml automatically.
+#
+# Usage:
+#   CLI:       python main.py --config config/user_afaq.yml ingest
+#   Streamlit: pick this file from the "Config Profile" dropdown in the sidebar
+
+vector_store_type: chroma
+
+retrieval:
+  top_k: 8
+
+chunking:
+  chunk_size: 800
+  chunk_overlap: 100
+
+chroma:
+  persist_directory: ./data/chroma/afaq
+  collection_name: afaq-collection
+
+corpus:
+  output_dir: ./data/corpus/afaq
+
+relational_store:
+  db_path: ./data/relational/afaq_chunks.db

@@ -2,8 +2,13 @@
 src/factories/adapter_factory.py
 
 Abstract factory that constructs every infrastructure adapter.
-Phase 4: adds create_file_system_watcher() and create_file_ingestion_adapter()
-for the landing zone / event-driven ingestion pipeline.
+Phase 5: adds create_pii_pre_processor() and create_relational_store().
+Corpus step: adds create_corpus_writer().
+Image/table step: PdfDocumentLoader now takes TableExtractionSettings;
+adds create_image_extractors() / create_image_extractor_resolver().
+PPTX step: registers PptxDocumentLoader.
+Legacy PPT step: registers PptDocumentLoader (LibreOffice-backed .ppt -> .pptx
+conversion), sharing the same PptxDocumentLoader instance for extraction.
 """
 
 from __future__ import annotations
@@ -13,22 +18,36 @@ from typing import Callable
 
 from rich.console import Console
 
+from src.domain.interfaces import IContentValidator, IFileValidator, IUnprocessedFileMover  # add to existing interfaces import block
+from src.infrastructure.validation import (
+    ContentNotEmptyValidator,
+    DocumentProtectionValidator,
+    EncodingValidator,
+    FileNotEmptyValidator,
+    UnprocessedFileMover,
+)
+
 from src.config.settings import Settings, VectorStoreType
 from src.domain.interfaces import (
     IAnswerGenerator,
+    ICorpusWriter,
     IDocumentLoader,
     IDocumentProcessor,
     IEmbeddingProvider,
     IEvalReporter,
+    IImageExtractor,
+    IImageExtractorResolver,
     IIngestionAdapter,
     ILandingZoneWatcher,
     ILogger,
     IPromptBuilder,
+    IRelationalStore,
     ITextChunker,
     IVectorIdStrategy,
     IVectorStore,
 )
 from src.factories.document_loader_factory import DocumentLoaderFactory
+from src.factories.image_extractor_factory import ImageExtractorFactory
 from src.factories.sdk_client_factory import SdkClientFactory
 from src.infrastructure.chunking import (
     ChunkingRoute,
@@ -36,8 +55,11 @@ from src.infrastructure.chunking import (
     RecursiveTextChunker,
     SemanticChunker,
 )
+from src.infrastructure.conversion import LibreOfficeConverter
+from src.infrastructure.corpus import MarkdownCorpusWriter
 from src.infrastructure.embeddings import OllamaEmbeddingProvider
 from src.infrastructure.generation import DefaultPromptBuilder, OllamaAnswerGenerator
+from src.infrastructure.images import DocxImageExtractor, PdfImageExtractor
 from src.infrastructure.landing_zone import FileIngestionAdapter, FileSystemWatcher
 from src.infrastructure.loaders import (
     DocxDocumentLoader,
@@ -45,15 +67,20 @@ from src.infrastructure.loaders import (
     JsonLoader,
     OcrLoader,
     PdfDocumentLoader,
+    PptDocumentLoader,
+    PptxDocumentLoader,
 )
+from src.infrastructure.pii import RegexPiiAnonymizer
 from src.infrastructure.pre_processing import (
     MetadataEnricher,
     MetadataNormalizer,
+    PiiAnonymizingPreProcessor,
     PreProcessingPipeline,
     SchemaMapper,
     TextSanitizer,
     UnicodeNormalizer,
 )
+from src.infrastructure.relational_store import SqliteRelationalStore
 from src.infrastructure.reporting import RichEvalReporter
 from src.infrastructure.vector_store import (
     ChromaVectorStore,
@@ -61,6 +88,16 @@ from src.infrastructure.vector_store import (
     QdrantVectorStore,
     Sha256VectorIdStrategy,
 )
+from src.domain.interfaces import IOcrEngine, ITableExtractionStrategy, ITextExtractionStrategy  # add to existing interfaces import
+from src.infrastructure.extraction import (
+    NullTableExtractionStrategy,
+    OcrTextExtractionStrategy,
+    PdfplumberTableExtractionStrategy,
+    PyMuPdfTableExtractionStrategy,
+    PyMuPdfTextExtractionStrategy,
+    PypdfTextExtractionStrategy,
+)
+from src.infrastructure.ocr import EasyOcrEngine, PaddleOcrEngine, TesseractOcrEngine
 
 
 class AdapterFactory:
@@ -74,15 +111,72 @@ class AdapterFactory:
         self._logger_factory = logger_factory
         self._vector_store_type = vector_store_type or settings.vector_store_type
 
+# ── Fallback chain resolution (PDF extraction) ──────────────────────────────
+
+    def _resolve_ocr_chain(self) -> list[tuple[str, IOcrEngine]]:
+        languages = self._settings.document_loading.pdf_ocr.languages
+        registry: dict[str, IOcrEngine] = {
+            "tesseract": TesseractOcrEngine(languages=languages),
+            "easyocr": EasyOcrEngine(languages=languages),
+            "paddleocr": PaddleOcrEngine(languages=languages),
+        }
+        ocr_settings = self._settings.document_loading.pdf_ocr
+        names = [ocr_settings.engine, *ocr_settings.fallbacks]
+        return [(name, registry[name]) for name in names if name in registry]
+
+    def _resolve_text_chain(self) -> list[tuple[str, ITextExtractionStrategy]]:
+        settings = self._settings.document_loading.pdf_text_extraction
+        registry: dict[str, ITextExtractionStrategy] = {
+            "pypdf": PypdfTextExtractionStrategy(),
+            "pymupdf": PyMuPdfTextExtractionStrategy(),
+            "tesseract_ocr": OcrTextExtractionStrategy(
+                ocr_engines=self._resolve_ocr_chain(),
+                ocr_confidence_threshold=self._settings.document_loading.pdf_ocr.confidence_threshold,
+                logger=self._logger_factory("extraction.ocr_text"),
+            ),
+        }
+        names = [settings.primary, *settings.fallbacks]
+        return [(name, registry[name]) for name in names if name in registry]
+
+    def _resolve_table_chain(self) -> list[tuple[str, ITableExtractionStrategy]]:
+        settings = self._settings.document_loading.pdf_table_extraction
+        registry: dict[str, ITableExtractionStrategy] = {
+            "pdfplumber": PdfplumberTableExtractionStrategy(),
+            "pymupdf_tables": PyMuPdfTableExtractionStrategy(),
+            "text_extraction": NullTableExtractionStrategy(),
+        }
+        names = [settings.primary, *settings.fallbacks]
+        return [(name, registry[name]) for name in names if name in registry]
+
     # ── Document loading ───────────────────────────────────────────────────────
 
     def create_document_loaders(self) -> list[IDocumentLoader]:
         ocr_lang = os.getenv("TESSERACT_LANG", "eng")
+
+        pptx_loader = PptxDocumentLoader(logger=self._logger_factory("loaders.pptx"))
+        libreoffice_converter = LibreOfficeConverter(
+            logger=self._logger_factory("conversion.libreoffice"),
+            settings=self._settings.libreoffice,
+        )
+
         return [
-            PdfDocumentLoader(logger=self._logger_factory("loaders.pdf")),
+            PdfDocumentLoader(
+                logger=self._logger_factory("loaders.pdf"),
+                table_extraction_settings=self._settings.table_extraction,
+                text_strategies=self._resolve_text_chain(),
+                table_strategies=self._resolve_table_chain(),
+                text_confidence_threshold=self._settings.document_loading.pdf_text_extraction.confidence_threshold,
+                table_min_confidence=self._settings.document_loading.pdf_table_extraction.min_confidence,
+            ),
             DocxDocumentLoader(
                 logger=self._logger_factory("loaders.docx"),
                 ingestion_settings=self._settings.ingestion,
+            ),
+            pptx_loader,
+            PptDocumentLoader(
+                logger=self._logger_factory("loaders.ppt"),
+                converter=libreoffice_converter,
+                pptx_loader=pptx_loader,
             ),
             HtmlLoader(logger=self._logger_factory("loaders.html")),
             JsonLoader(logger=self._logger_factory("loaders.json")),
@@ -94,10 +188,58 @@ class AdapterFactory:
             loaders=self.create_document_loaders(),
             logger=self._logger_factory("loaders.resolver"),
         )
+    
+    # ── Validation ─────────────────────────────────────────────────────────────
 
-    # ── Pre-processing ─────────────────────────────────────────────────────────
+    def create_file_validators(self) -> list[IFileValidator]:
+        validators: list[IFileValidator] = [FileNotEmptyValidator()]
+        if self._settings.validation.readonly_check_enabled:
+            validators.append(DocumentProtectionValidator())
+        return validators
+
+    def create_content_validators(self) -> list[IContentValidator]:
+        return [
+            ContentNotEmptyValidator(),
+            EncodingValidator(max_replacement_ratio=self._settings.validation.max_replacement_char_ratio),
+        ]
+
+    def create_unprocessed_mover(self) -> IUnprocessedFileMover:
+        return UnprocessedFileMover(
+            logger=self._logger_factory("validation.mover"),
+            unprocessed_dir=self._settings.validation.unprocessed_dir,
+        )
+    
+    # ── Image extraction ───────────────────────────────────────────────────────
+
+    def create_image_extractors(self) -> list[IImageExtractor]:
+        return [
+            PdfImageExtractor(
+                logger=self._logger_factory("images.pdf"),
+                settings=self._settings.image_extraction,
+            ),
+            DocxImageExtractor(
+                logger=self._logger_factory("images.docx"),
+                settings=self._settings.image_extraction,
+            ),
+        ]
+
+    def create_image_extractor_resolver(self) -> IImageExtractorResolver | None:
+        """Returns None when IMAGE_EXTRACTION_ENABLED=false in .env / YAML."""
+        if not self._settings.image_extraction.enabled:
+            return None
+        return ImageExtractorFactory(
+            extractors=self.create_image_extractors(),
+            logger=self._logger_factory("images.resolver"),
+        )
+
+    # ── Pre-processing (Phase 1 + 3 + 5) ──────────────────────────────────────
 
     def create_pre_processing_pipeline(self) -> IDocumentProcessor:
+        """
+        Full pre-processing chain:
+          TextSanitizer → UnicodeNormalizer → MetadataNormalizer
+          → SchemaMapper → MetadataEnricher → [PiiAnonymizer if enabled]
+        """
         processors = [
             TextSanitizer(logger=self._logger_factory("pre_processing.sanitizer")),
             UnicodeNormalizer(logger=self._logger_factory("pre_processing.unicode")),
@@ -105,6 +247,21 @@ class AdapterFactory:
             SchemaMapper(logger=self._logger_factory("pre_processing.schema")),
             MetadataEnricher(logger=self._logger_factory("pre_processing.enricher")),
         ]
+
+        # Conditionally add PII anonymizer (Phase 5)
+        if self._settings.pii.enabled:
+            enabled_types = list(self._settings.pii.enabled_types) or None
+            anonymizer = RegexPiiAnonymizer(
+                logger=self._logger_factory("pii.anonymizer"),
+                enabled_types=enabled_types,
+            )
+            processors.append(
+                PiiAnonymizingPreProcessor(
+                    anonymizer=anonymizer,
+                    logger=self._logger_factory("pre_processing.pii"),
+                )
+            )
+
         return PreProcessingPipeline(
             processors=processors,
             logger=self._logger_factory("pre_processing.pipeline"),
@@ -191,6 +348,28 @@ class AdapterFactory:
             )
         raise ValueError(f"Unsupported VectorStoreType: {vst}")
 
+    # ── Relational store (Phase 5) ─────────────────────────────────────────────
+
+    def create_relational_store(self) -> IRelationalStore | None:
+        """Returns None when RELATIONAL_STORE_ENABLED=false in .env."""
+        if not self._settings.relational_store.enabled:
+            return None
+        return SqliteRelationalStore(
+            logger=self._logger_factory("relational_store"),
+            settings=self._settings.relational_store,
+        )
+
+    # ── Corpus writer ──────────────────────────────────────────────────────────
+
+    def create_corpus_writer(self) -> ICorpusWriter | None:
+        """Returns None when CORPUS_WRITER_ENABLED=false in .env."""
+        if not self._settings.corpus.enabled:
+            return None
+        return MarkdownCorpusWriter(
+            logger=self._logger_factory("corpus_writer"),
+            corpus_settings=self._settings.corpus,
+        )
+
     # ── Generation ─────────────────────────────────────────────────────────────
 
     def create_prompt_builder(self) -> IPromptBuilder:
@@ -215,11 +394,9 @@ class AdapterFactory:
     def create_eval_reporter(self, console: Console | None = None) -> IEvalReporter:
         return RichEvalReporter(console=console or Console())
 
-    # ── Landing zone (Phase 4) ─────────────────────────────────────────────────
+    # ── Landing zone ───────────────────────────────────────────────────────────
 
-    def create_file_ingestion_adapter(
-        self, streaming_service
-    ) -> IIngestionAdapter:
+    def create_file_ingestion_adapter(self, streaming_service) -> IIngestionAdapter:
         return FileIngestionAdapter(
             ingestion_service=streaming_service,
             logger=self._logger_factory("landing_zone.adapter"),

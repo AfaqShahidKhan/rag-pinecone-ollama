@@ -28,8 +28,7 @@ class DocumentLoaderFactory(IDocumentLoaderResolver):
             f"No registered loader handles this extension."
         )
 
-    def load_all_from_directory(self, directory: Path) -> list[Document]:
-        # Dynamically collect every file any registered loader can handle
+    def list_supported_files(self, directory: Path) -> list[Path]:
         files = sorted(
             p for p in directory.rglob("*")
             if p.is_file() and any(loader.supports(p) for loader in self._loaders)
@@ -45,6 +44,10 @@ class DocumentLoaderFactory(IDocumentLoaderResolver):
             f"Found {len(files)} file(s) in '{directory}': "
             f"{[f.name for f in files]}"
         )
+        return files
+
+    def load_all_from_directory(self, directory: Path) -> list[Document]:
+        files = self.list_supported_files(directory)
 
         all_docs: list[Document] = []
         for file_path in files:
