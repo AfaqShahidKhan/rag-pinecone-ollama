@@ -50,6 +50,40 @@ DB_OPTIONS = {
     },
 }
 
+# ── Profile presets (Speed / Quality / Strict) ──────────────────────────────────
+PROFILE_PRESETS = {
+    "🚀 Speed": {
+        "document_loading": {
+            "pdf": {
+                "text_extraction": {"fallbacks": [], "confidence_threshold": 0.5},
+                "table_extraction": {"fallbacks": [], "min_confidence": 0.5},
+                "ocr": {"fallbacks": [], "confidence_threshold": 0.5},
+            }
+        },
+        "validation": {"max_replacement_char_ratio": 0.02},
+    },
+    "⚖️ Quality": {
+        "document_loading": {
+            "pdf": {
+                "text_extraction": {"fallbacks": ["pymupdf", "tesseract_ocr"], "confidence_threshold": 0.7},
+                "table_extraction": {"fallbacks": ["pymupdf_tables", "text_extraction"], "min_confidence": 0.6},
+                "ocr": {"fallbacks": ["easyocr", "paddleocr"], "confidence_threshold": 0.5},
+            }
+        },
+        "validation": {"max_replacement_char_ratio": 0.01},
+    },
+    "🎯 Strict": {
+        "document_loading": {
+            "pdf": {
+                "text_extraction": {"fallbacks": ["pymupdf", "tesseract_ocr"], "confidence_threshold": 0.85},
+                "table_extraction": {"fallbacks": ["pymupdf_tables", "text_extraction"], "min_confidence": 0.7},
+                "ocr": {"fallbacks": ["easyocr", "paddleocr"], "confidence_threshold": 0.6},
+            }
+        },
+        "validation": {"max_replacement_char_ratio": 0.005},
+    },
+}
+
 # ── Config profiles ─────────────────────────────────────────────────────────────
 CONFIG_DIR = Path(__file__).parent / "config"
 
@@ -163,12 +197,26 @@ with st.sidebar:
 
         new_pii = st.checkbox("Enable PII redaction", value=True, key="new_profile_pii")
         new_relational = st.checkbox("Enable relational store", value=True, key="new_profile_relational")
+        new_profile_type = st.radio(
+            "Profile type",
+            options=list(PROFILE_PRESETS.keys()),
+            index=1,  # Quality — today's existing defaults
+            key="new_profile_type",
+            horizontal=True,
+            help=(
+                "Speed: skips the fallback chain entirely — primary extractor only. "
+                "Quality: today's defaults — full fallback chain, standard thresholds. "
+                "Strict: full fallback chain with stricter confidence thresholds, so "
+                "borderline pages get more scrutiny and marginal content is flagged more readily."
+            ),
+        )
 
         if st.button("💾 Save profile", key="save_new_profile"):
             if not new_name.strip():
                 st.error("Enter a profile name first.")
             else:
                 overrides = {
+                    "profile_type": new_profile_type,  # informational only — not read by SettingsFactory
                     "vector_store_type": new_db,
                     "chunking": {
                         "chunk_size": int(new_chunk_size),
@@ -181,6 +229,7 @@ with st.sidebar:
                         "db_path": f"./data/relational/{new_name.strip()}_chunks.db",
                     },
                     "corpus": {"output_dir": f"./data/corpus/{new_name.strip()}"},
+                    **PROFILE_PRESETS[new_profile_type],
                 }
                 if new_db == VectorStoreType.CHROMA.value:
                     overrides["chroma"] = {
@@ -235,7 +284,9 @@ with tab_ask:
     st.header("Ask a question")
 
     db_key = selected_db.value
-    msg_key = f"messages_{db_key}"
+    profile_key = selected_profile.replace(" ", "_") if selected_profile else "default"
+    msg_key = f"messages_{db_key}_{profile_key}"
+    
     if msg_key not in st.session_state:
         st.session_state[msg_key] = []
 
@@ -274,6 +325,7 @@ with tab_ask:
                         project_root=Path(__file__).parent,
                         token_sink=sink,
                         vector_store_type=selected_db,
+                        config_file=selected_config_file,
                     )
                     resp = c.rag_query_service.ask(prompt, top_k=top_k, stream=True)
                     result_box.append(resp)
@@ -321,6 +373,7 @@ with tab_ask:
                     {
                         "source": s.source, "page": s.page,
                         "chunk_index": s.chunk_index, "score": s.score,
+                        "pii_redacted": getattr(s, "pii_redacted", False),
                     }
                     for s in response.sources
                 ]
@@ -331,7 +384,7 @@ with tab_ask:
                 })
 
     if st.session_state.get(msg_key):
-        if st.button("Clear chat", key=f"clear_{db_key}"):
+        if st.button("Clear chat", key=f"clear_{db_key}_{profile_key}"):
             st.session_state[msg_key] = []
             st.rerun()
 
@@ -388,8 +441,68 @@ with tab_ingest:
                         )
                 except Exception as e:
                     st.error(f"Ingestion failed: {e}")
+   
+   
+    # ── Corpus-only test path (no embedding/vector store needed) ───────────
 
+    st.divider()
+    st.subheader("🧪 Build Corpus Only (no embedding — for testing)")
+    st.caption(
+        "Runs only load → image extraction → pre-processing → corpus writing. "
+        "No Ollama or vector store connection needed. Use this to check PII "
+        "redaction, table extraction, and image extraction before committing "
+        "to a full (slower) ingest — the DB selector above has no effect here."
+    )
 
+    col3, col4 = st.columns([2, 1])
+    with col3:
+        corpus_test_path = st.text_input(
+            "Directory or file path (leave blank for data/landing_zone)",
+            placeholder=str(container.settings.data_raw),
+            key="corpus_test_path",
+        )
+    with col4:
+        st.write("")
+        st.write("")
+        run_corpus_only = st.button(
+            "🧪 Build Corpus Only", use_container_width=True, key="run_corpus_only"
+        )
+
+    if run_corpus_only:
+        source = (
+            Path(corpus_test_path.strip()) if corpus_test_path.strip()
+            else container.settings.data_raw
+        )
+        if not source.exists():
+            st.error(f"Path not found: `{source}`")
+        else:
+            with st.spinner(f"Parsing `{source}` (no embedding)…"):
+                try:
+                    total = container.corpus_builder_service.build(source)
+                    st.success(f"✅ Wrote **{total}** corpus file(s).")
+                    st.caption(
+                        f"🔒 PII redaction is **{'ON' if container.settings.pii.enabled else 'OFF'}** "
+                        f"for the active profile (`{selected_profile}`). "
+                        "Switch profiles in the sidebar and re-run to compare."
+                    )
+                    st.session_state["last_corpus_dir"] = container.settings.corpus.output_dir
+                except Exception as e:
+                    st.error(f"Corpus build failed: {e}")
+
+    corpus_dir = Path(
+        st.session_state.get("last_corpus_dir", container.settings.corpus.output_dir)
+    )
+    if corpus_dir.exists():
+        md_files = sorted(corpus_dir.rglob("*.md"))
+        if md_files:
+            selected_md = st.selectbox(
+                "View a generated corpus file",
+                options=md_files,
+                format_func=lambda p: str(p.relative_to(corpus_dir)),
+                key="corpus_file_viewer",
+            )
+            if selected_md:
+                st.code(selected_md.read_text(encoding="utf-8"), language="markdown")
 # ══════════════════════════════════════════════════════════════════════════════
 # WATCH TAB
 # ══════════════════════════════════════════════════════════════════════════════
@@ -680,9 +793,10 @@ with tab_db:
 with tab_settings:
     st.header("Pipeline Settings")
     st.caption(
-        "These settings are read from `.env` at startup. "
-        "Changes here are informational only — edit `.env` and restart to apply."
-    )
+    "Settings are loaded from `config/default.yml`, overridden by the active "
+    "profile, then by `.env`. Changes here are informational only — "
+    "edit your profile YAML or `.env` and restart to apply."
+   )
 
     # ── PII ───────────────────────────────────────────────────────────────────
     st.subheader("🔒 PII Anonymization")

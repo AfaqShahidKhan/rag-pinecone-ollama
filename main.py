@@ -7,8 +7,10 @@ Phase 4: adds the `watch` command for event-driven landing zone ingestion.
 Step 3: adds `--config` for per-user YAML config profiles.
 Logging step: wraps dispatch in a top-level try/except so an uncaught
 exception is always logged (with traceback) to the rotating file before
-the process exits — not just whatever happened to reach a logger.error()
-call before the crash.
+the process exits.
+Test data step: adds `build-corpus` — landing zone -> corpus only, no
+embedding/vector store needed, for teammates testing document parsing
+without any external service credentials configured.
 """
 
 from __future__ import annotations
@@ -40,6 +42,20 @@ def build_arg_parser() -> argparse.ArgumentParser:
     # ingest (batch)
     ingest_parser = subparsers.add_parser("ingest", help="Ingest documents into the vector store")
     ingest_parser.add_argument(
+        "source", nargs="?", default=None,
+        help="Path to a file or directory. Defaults to <project_root>/data/landing_zone.",
+    )
+
+    # build-corpus (parsing-only test path — no Ollama/vector store needed)
+    build_corpus_parser = subparsers.add_parser(
+        "build-corpus",
+        help=(
+            "Parse landing-zone documents and write the human-readable corpus only "
+            "(no embedding or vector store connection needed) — for testing document "
+            "parsing/table/image extraction without any external service credentials."
+        ),
+    )
+    build_corpus_parser.add_argument(
         "source", nargs="?", default=None,
         help="Path to a file or directory. Defaults to <project_root>/data/landing_zone.",
     )
@@ -81,6 +97,12 @@ def _dispatch(container: Container, args: argparse.Namespace) -> int:
         source = Path(args.source) if args.source else container.settings.data_raw
         total = container.ingestion_service.ingest_path(source)
         print(f"Indexed {total} vectors.")
+        return 0
+
+    if args.command == "build-corpus":
+        source = Path(args.source) if args.source else container.settings.data_raw
+        total = container.corpus_builder_service.build(source)
+        print(f"Wrote {total} corpus file(s) to '{container.settings.corpus.output_dir}'.")
         return 0
 
     if args.command == "ask":
@@ -136,8 +158,6 @@ def main(argv: list[str] | None = None) -> int:
         container = Container.bootstrap(token_sink=_print_token, config_file=args.config_file)
         return _dispatch(container, args)
     except Exception:
-        # Ensures a crash is always traceable in logs/rag.log, even if it
-        # happens before any component-level logger.error() call runs.
         logging.getLogger("main").exception("Unhandled exception during CLI execution.")
         print("\nAn unexpected error occurred. See logs/rag.log for the full traceback.")
         return 1

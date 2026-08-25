@@ -5,6 +5,11 @@ Assembles application-layer services from adapters.
 Phase 5: injects relational_store and id_strategy into both ingestion services.
 Corpus step: injects corpus_writer into both ingestion services.
 Image/table step: injects image_extractor_resolver into both ingestion services.
+Test data step: adds create_corpus_builder_service().
+Validation step: adds create_file_validation_gate(), injected into
+IngestionService, StreamingIngestionService, and CorpusBuilderService — the
+read-only check, structural validators, and unprocessed/ quarantine now
+behave identically across ingest/build-corpus/watch.
 """
 
 from __future__ import annotations
@@ -12,7 +17,9 @@ from __future__ import annotations
 from typing import Callable
 
 from src.application.services import (
+    CorpusBuilderService,
     EvaluationService,
+    FileValidationGate,
     IngestionService,
     RagQueryService,
     RetrievalService,
@@ -34,6 +41,17 @@ class ServiceFactory:
         self._adapters = adapter_factory
         self._logger_factory = logger_factory
 
+    def create_file_validation_gate(self) -> FileValidationGate | None:
+        """Returns None when VALIDATION_ENABLED=false — services then skip all gating."""
+        if not self._settings.validation.enabled:
+            return None
+        return FileValidationGate(
+            file_validators=self._adapters.create_file_validators(),
+            content_validators=self._adapters.create_content_validators(),
+            mover=self._adapters.create_unprocessed_mover(),
+            logger=self._logger_factory("validation.gate"),
+        )
+
     def create_ingestion_service(self) -> IngestionService:
         embedding_provider = self._adapters.create_embedding_provider()
         return IngestionService(
@@ -47,6 +65,7 @@ class ServiceFactory:
             id_strategy=self._adapters.create_vector_id_strategy(),
             corpus_writer=self._adapters.create_corpus_writer(),
             image_extractor_resolver=self._adapters.create_image_extractor_resolver(),
+            validation_gate=self.create_file_validation_gate(),
         )
 
     def create_streaming_ingestion_service(self) -> StreamingIngestionService:
@@ -62,6 +81,22 @@ class ServiceFactory:
             id_strategy=self._adapters.create_vector_id_strategy(),
             corpus_writer=self._adapters.create_corpus_writer(),
             image_extractor_resolver=self._adapters.create_image_extractor_resolver(),
+            validation_gate=self.create_file_validation_gate(),
+        )
+
+    def create_corpus_builder_service(self) -> CorpusBuilderService:
+        """
+        Deliberately never calls create_embedding_provider() or
+        create_vector_store() — this is what makes it usable with zero
+        external service credentials configured.
+        """
+        return CorpusBuilderService(
+            loader_resolver=self._adapters.create_document_loader_resolver(),
+            logger=self._logger_factory("corpus_builder_service"),
+            pre_processor=self._adapters.create_pre_processing_pipeline(),
+            image_extractor_resolver=self._adapters.create_image_extractor_resolver(),
+            corpus_writer=self._adapters.create_corpus_writer(),
+            validation_gate=self.create_file_validation_gate(),
         )
 
     def create_landing_zone_watcher(self, recursive: bool = False) -> ILandingZoneWatcher:

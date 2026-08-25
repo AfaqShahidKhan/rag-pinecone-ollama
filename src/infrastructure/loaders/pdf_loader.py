@@ -1,59 +1,102 @@
 """
 src/infrastructure/loaders/pdf_loader.py
 
-IDocumentLoader adapter backed by pypdf (text) + pdfplumber (tables).
+IDocumentLoader adapter with configurable fallback chains for both text
+and table extraction (see config/default.yml's document_loading.pdf
+section). Each page runs the primary strategy first; if its confidence is
+below the configured threshold (or it raises), the next strategy in the
+chain is tried, down to a guaranteed-to-succeed last resort:
+  text:  pypdf -> PyMuPDF -> OCR (rasterize + tesseract/easyocr/paddleocr)
+  table: pdfplumber -> PyMuPDF tables -> give up (rely on plain text)
 
-Table extraction: pdfplumber detects and extracts tables per page far more
-reliably than raw text parsing would. Detected tables are converted to
-Markdown (same convention DocxDocumentLoader already uses) and appended
-after the page's regular text — MetadataEnricher's existing has_tables
-regex detects Markdown pipe syntax automatically, so no change was needed
-there.
-
-Table extraction is best-effort: a page that fails table detection still
-returns its plain text via pypdf, and a failure never aborts the whole
-document (logged as a warning instead).
+Every page where a fallback was actually needed is logged with LOAD-003
+(see src.domain.errors) so it's easy to find in logs/exceptions.log which
+pages needed extra help and which strategy ultimately won.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 
-import pdfplumber
 from pypdf import PdfReader
 
 from src.config.settings import TableExtractionSettings
 from src.domain.entities import Document
-from src.domain.interfaces import IDocumentLoader, ILogger
+from src.domain.errors import ErrorCode, format_error
+from src.domain.fallback_chain import run_fallback_chain
+from src.domain.interfaces import (
+    IDocumentLoader,
+    ILogger,
+    ITableExtractionStrategy,
+    ITextExtractionStrategy,
+)
 
 SUPPORTED_EXTENSION = ".pdf"
 
 
 class PdfDocumentLoader(IDocumentLoader):
-    def __init__(self, logger: ILogger, table_extraction_settings: TableExtractionSettings) -> None:
+    def __init__(
+        self,
+        logger: ILogger,
+        table_extraction_settings: TableExtractionSettings,
+        text_strategies: list[tuple[str, ITextExtractionStrategy]],
+        table_strategies: list[tuple[str, ITableExtractionStrategy]],
+        text_confidence_threshold: float,
+        table_min_confidence: float,
+    ) -> None:
         self._logger = logger
         self._table_settings = table_extraction_settings
+        self._text_strategies = text_strategies
+        self._table_strategies = table_strategies
+        self._text_confidence_threshold = text_confidence_threshold
+        self._table_min_confidence = table_min_confidence
 
     def supports(self, path: Path) -> bool:
         return path.suffix.lower() == SUPPORTED_EXTENSION
 
     def load(self, path: Path) -> list[Document]:
-        reader = PdfReader(str(path))
-        total = len(reader.pages)
-        tables_by_page = self._extract_tables(path) if self._table_settings.enabled else {}
+        total = self._page_count(path)
         docs: list[Document] = []
+        fallback_pages = 0
+        table_pages = 0
 
-        for i, page in enumerate(reader.pages):
-            text = (page.extract_text() or "").strip()
-            page_tables = tables_by_page.get(i + 1, [])
+        for i in range(total):
+            text_result = run_fallback_chain(
+                [
+                    (name, lambda s=strategy: s.extract_page(path, i, total))
+                    for name, strategy in self._text_strategies
+                ],
+                confidence_threshold=self._text_confidence_threshold,
+            )
+            if text_result.fell_back:
+                fallback_pages += 1
+                self._logger.warning(format_error(
+                    ErrorCode.LOAD_FALLBACK_USED,
+                    f"'{path.name}' page {i + 1}: text extraction fell back to "
+                    f"'{text_result.attempt.strategy_name}' (tried {text_result.attempts_tried}).",
+                ))
 
-            if not text and not page_tables:
+            table_md = ""
+            if self._table_settings.enabled:
+                table_result = run_fallback_chain(
+                    [
+                        (name, lambda s=strategy: s.extract_page(path, i, total))
+                        for name, strategy in self._table_strategies
+                    ],
+                    confidence_threshold=self._table_min_confidence,
+                )
+                table_md = table_result.attempt.content
+                if table_md:
+                    table_pages += 1
+
+            text = text_result.attempt.content.strip()
+            if not text and not table_md:
                 self._logger.warning(
                     f"Page {i + 1}/{total} of '{path.name}' yielded no text or tables — skipping."
                 )
                 continue
 
-            combined = "\n\n".join(part for part in [text, *page_tables] if part)
+            combined = "\n\n".join(part for part in [text, table_md] if part)
 
             docs.append(Document(
                 page_content=combined,
@@ -63,60 +106,18 @@ class PdfDocumentLoader(IDocumentLoader):
                     "page": i + 1,
                     "total_pages": total,
                     "file_type": "pdf",
-                    "table_count": len(page_tables),
+                    "table_count": len(table_md.split("\n\n")) if table_md else 0,
+                    "text_extraction_method": text_result.attempt.strategy_name,
+                    "text_extraction_confidence": text_result.attempt.confidence,
                 },
             ))
 
-        table_pages = sum(1 for v in tables_by_page.values() if v)
         self._logger.info(
             f"Loaded '{path.name}': {len(docs)}/{total} pages with content "
-            f"({table_pages} page(s) contained tables)."
+            f"({table_pages} page(s) with tables, {fallback_pages} page(s) needed a fallback extractor)."
         )
         return docs
 
-    def _extract_tables(self, path: Path) -> dict[int, list[str]]:
-        """
-        Returns {page_number: [markdown_table, ...]} for every page with at
-        least one detectable table. Best-effort — pdfplumber's detection can
-        miss borderless tables; that content still comes through as plain
-        text via pypdf either way, so nothing is lost, just not structured.
-        """
-        tables_by_page: dict[int, list[str]] = {}
-        try:
-            with pdfplumber.open(str(path)) as pdf:
-                for i, page in enumerate(pdf.pages):
-                    raw_tables = page.extract_tables()
-                    if not raw_tables:
-                        continue
-                    markdown_tables = [
-                        md for md in (self._table_to_markdown(t) for t in raw_tables) if md
-                    ]
-                    if markdown_tables:
-                        tables_by_page[i + 1] = markdown_tables
-        except Exception as exc:
-            self._logger.warning(
-                f"Table extraction failed for '{path.name}': {exc}. "
-                f"Continuing with text-only content."
-            )
-        return tables_by_page
-
     @staticmethod
-    def _table_to_markdown(rows: list[list[str | None]]) -> str:
-        """Convert a pdfplumber extracted table (list of rows of cells) to Markdown."""
-        cleaned_rows = [
-            [
-                str(cell).strip().replace("|", "\\|").replace("\n", " ") if cell else ""
-                for cell in row
-            ]
-            for row in rows
-        ]
-        cleaned_rows = [row for row in cleaned_rows if any(cell for cell in row)]
-        if not cleaned_rows:
-            return ""
-
-        lines: list[str] = []
-        for i, row in enumerate(cleaned_rows):
-            lines.append("| " + " | ".join(row) + " |")
-            if i == 0:
-                lines.append("| " + " | ".join(["---"] * len(row)) + " |")
-        return "\n".join(lines)
+    def _page_count(path: Path) -> int:
+        return len(PdfReader(str(path)).pages)

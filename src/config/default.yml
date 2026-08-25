@@ -73,7 +73,30 @@ image_extraction:
 logging:
   log_dir: ./logs
   filename: rag.log
+  exceptions_filename: exceptions.log # ERROR+ only, with error codes — segregated from the main log
   max_bytes: 10485760 # 10 MB — rotates automatically
   backup_count: 5 # keep last 5 rotated files
   console_level: INFO
   file_level: DEBUG # file captures more detail than the console
+
+validation:
+  enabled: true
+  readonly_check_enabled: true # reject files that are still writable (mid-copy/mid-write)
+  unprocessed_dir: ./data/unprocessed
+  max_replacement_char_ratio: 0.01 # content above this ratio of replacement chars is flagged as corrupt
+
+document_loading:
+  pdf:
+    text_extraction:
+      primary: pypdf
+      fallbacks: [pymupdf, tesseract_ocr]
+      confidence_threshold: 0.7
+    table_extraction:
+      primary: pdfplumber
+      fallbacks: [pymupdf_tables, text_extraction]
+      min_confidence: 0.6
+    ocr:
+      engine: tesseract
+      fallbacks: [easyocr, paddleocr]
+      languages: [en]
+      confidence_threshold: 0.5

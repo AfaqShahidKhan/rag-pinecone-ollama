@@ -38,7 +38,12 @@ from src.config.settings import (
     SemanticChunkingSettings,
     Settings,
     TableExtractionSettings,
+    ValidationSettings,
     VectorStoreType,
+    DocumentLoadingSettings,
+    PdfTextExtractionSettings, 
+    PdfTableExtractionSettings,
+    PdfOcrSettings
 )
 from src.factories.yaml_config_loader import YamlConfigLoader
 
@@ -173,9 +178,12 @@ class SettingsFactory:
                     self._value(yaml_config, "libreoffice.timeout_seconds", "LIBREOFFICE_TIMEOUT_SECONDS", 120)
                 ),
             ),
-            logging=LoggingSettings(
+           logging=LoggingSettings(
                 log_dir=self._value(yaml_config, "logging.log_dir", "LOG_DIR", "./logs"),
                 filename=self._value(yaml_config, "logging.filename", "LOG_FILENAME", "rag.log"),
+                exceptions_filename=self._value(
+                    yaml_config, "logging.exceptions_filename", "LOG_EXCEPTIONS_FILENAME", "exceptions.log"
+                ),
                 max_bytes=int(
                     self._value(yaml_config, "logging.max_bytes", "LOG_MAX_BYTES", 10 * 1024 * 1024)
                 ),
@@ -184,6 +192,68 @@ class SettingsFactory:
                 ),
                 console_level=self._value(yaml_config, "logging.console_level", "LOG_CONSOLE_LEVEL", "INFO"),
                 file_level=self._value(yaml_config, "logging.file_level", "LOG_FILE_LEVEL", "DEBUG"),
+            ),
+           validation=ValidationSettings(
+                enabled=self._bool(yaml_config, "validation.enabled", "VALIDATION_ENABLED", True),
+                readonly_check_enabled=self._bool(
+                    yaml_config, "validation.readonly_check_enabled",
+                    "VALIDATION_READONLY_CHECK_ENABLED", True,
+                ),
+                unprocessed_dir=self._value(
+                    yaml_config, "validation.unprocessed_dir", "VALIDATION_UNPROCESSED_DIR", "./data/unprocessed"
+                ),
+                max_replacement_char_ratio=float(
+                    self._value(
+                        yaml_config, "validation.max_replacement_char_ratio",
+                        "VALIDATION_MAX_REPLACEMENT_CHAR_RATIO", 0.01,
+                    )
+                ),
+            ),
+           document_loading=DocumentLoadingSettings(
+                pdf_text_extraction=PdfTextExtractionSettings(
+                    primary=self._value(
+                        yaml_config, "document_loading.pdf.text_extraction.primary",
+                        "PDF_TEXT_PRIMARY", "pypdf",
+                    ),
+                    fallbacks=tuple(self._dig_list(
+                        yaml_config, "document_loading.pdf.text_extraction.fallbacks",
+                        ["pymupdf", "tesseract_ocr"],
+                    )),
+                    confidence_threshold=float(self._value(
+                        yaml_config, "document_loading.pdf.text_extraction.confidence_threshold",
+                        "PDF_TEXT_CONFIDENCE_THRESHOLD", 0.7,
+                    )),
+                ),
+                pdf_table_extraction=PdfTableExtractionSettings(
+                    primary=self._value(
+                        yaml_config, "document_loading.pdf.table_extraction.primary",
+                        "PDF_TABLE_PRIMARY", "pdfplumber",
+                    ),
+                    fallbacks=tuple(self._dig_list(
+                        yaml_config, "document_loading.pdf.table_extraction.fallbacks",
+                        ["pymupdf_tables", "text_extraction"],
+                    )),
+                    min_confidence=float(self._value(
+                        yaml_config, "document_loading.pdf.table_extraction.min_confidence",
+                        "PDF_TABLE_MIN_CONFIDENCE", 0.6,
+                    )),
+                ),
+                pdf_ocr=PdfOcrSettings(
+                    engine=self._value(
+                        yaml_config, "document_loading.pdf.ocr.engine", "PDF_OCR_ENGINE", "tesseract"
+                    ),
+                    fallbacks=tuple(self._dig_list(
+                        yaml_config, "document_loading.pdf.ocr.fallbacks",
+                        ["easyocr", "paddleocr"],
+                    )),
+                    languages=tuple(self._dig_list(
+                        yaml_config, "document_loading.pdf.ocr.languages", ["en"]
+                    )),
+                    confidence_threshold=float(self._value(
+                        yaml_config, "document_loading.pdf.ocr.confidence_threshold",
+                        "PDF_OCR_CONFIDENCE_THRESHOLD", 0.5,
+                    )),
+                ),
             ),
             vector_store_type=store_type,
             project_root=self._project_root,
@@ -214,6 +284,18 @@ class SettingsFactory:
         if yaml_value is not None:
             return str(yaml_value).strip().lower() == "true"
         return self._optional(env_key, str(default)).lower() == "true"
+    
+    @staticmethod
+    def _dig_list(yaml_config: dict, dotted_key: str, default: list) -> list:
+        """
+        Like _dig(), but distinguishes 'key absent' from 'key explicitly set
+        to an empty list' — plain `or` can't do this, since [] is falsy and
+        would wrongly fall back to the default (breaking any profile that
+        intentionally disables a fallback chain via `fallbacks: []`).
+        """
+        value = SettingsFactory._dig(yaml_config, dotted_key)
+        return value if value is not None else default
+    
 
     @staticmethod
     def _require(key: str) -> str:

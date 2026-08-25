@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Callable
 
 from src.application.services import (
+    CorpusBuilderService,
     EvaluationService,
     IngestionService,
     RagQueryService,
@@ -39,6 +40,7 @@ class Container:
         # Lazily-cached services
         self._ingestion_service: IngestionService | None = None
         self._streaming_ingestion_service: StreamingIngestionService | None = None
+        self._corpus_builder_service: CorpusBuilderService | None = None
         self._retrieval_service: RetrievalService | None = None
         self._rag_query_service: RagQueryService | None = None
         self._evaluation_service: EvaluationService | None = None
@@ -103,6 +105,17 @@ class Container:
         if self._streaming_ingestion_service is None:
             self._streaming_ingestion_service = self._services.create_streaming_ingestion_service()
         return self._streaming_ingestion_service
+
+    @property
+    def corpus_builder_service(self) -> CorpusBuilderService:
+        """
+        Landing-zone -> corpus only, no embedding/vector store involved.
+        Safe to use with zero external service credentials configured —
+        for teammates testing document parsing/table/image extraction.
+        """
+        if self._corpus_builder_service is None:
+            self._corpus_builder_service = self._services.create_corpus_builder_service()
+        return self._corpus_builder_service
 
     # ── Retrieval & RAG ────────────────────────────────────────────────────────
 

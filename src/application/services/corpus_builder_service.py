@@ -1,84 +1,69 @@
 """
-src/application/services/ingestion_service.py
+src/application/services/corpus_builder_service.py
 
-Orchestrates the ingestion pipeline:
+Runs only the document-parsing portion of the ingestion pipeline:
     [validate file] → load → [extract images] → [validate content]
-    → pre_process → [write corpus] → chunk → embed → upsert
-    → [save to relational store]
+    → pre_process → write_corpus
 
-Validation step: a FileValidationGate runs before AND after loading each
-file. Rejected files (writable/not-readonly, empty, load failure, empty or
-corrupt content) are logged with an error code and moved to
-data/unprocessed/<reason>/ — they never reach chunking/embedding.
+Deliberately does NOT depend on IEmbeddingProvider or IVectorStore — this
+service works with zero external service credentials configured.
+
+Validation step: same FileValidationGate as IngestionService/
+StreamingIngestionService — read-only check, empty-file check, and content
+validators all apply here too, so build-corpus is a true preview of what
+the full ingest would accept or reject.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 
-from src.domain.entities import Document, EmbeddedChunk
+from src.domain.entities import Document
 from src.domain.interfaces import (
     ICorpusWriter,
     IDocumentLoaderResolver,
     IDocumentProcessor,
-    IEmbeddingProvider,
     IImageExtractorResolver,
     ILogger,
-    IRelationalStore,
-    ITextChunker,
-    IVectorIdStrategy,
-    IVectorStore,
 )
 from src.application.services.file_validation_gate import FileValidationGate
 
 
-class IngestionService:
+class CorpusBuilderService:
     def __init__(
         self,
         loader_resolver: IDocumentLoaderResolver,
-        chunker: ITextChunker,
-        embedding_provider: IEmbeddingProvider,
-        vector_store: IVectorStore,
         logger: ILogger,
         pre_processor: IDocumentProcessor | None = None,
-        relational_store: IRelationalStore | None = None,
-        id_strategy: IVectorIdStrategy | None = None,
-        corpus_writer: ICorpusWriter | None = None,
         image_extractor_resolver: IImageExtractorResolver | None = None,
+        corpus_writer: ICorpusWriter | None = None,
         validation_gate: FileValidationGate | None = None,
     ) -> None:
         self._loader_resolver = loader_resolver
-        self._chunker = chunker
-        self._embedding_provider = embedding_provider
-        self._vector_store = vector_store
         self._logger = logger
         self._pre_processor = pre_processor
-        self._relational_store = relational_store
-        self._id_strategy = id_strategy
-        self._corpus_writer = corpus_writer
         self._image_extractor_resolver = image_extractor_resolver
+        self._corpus_writer = corpus_writer
         self._validation_gate = validation_gate
 
-    def ingest_path(self, source: Path) -> int:
+    def build(self, source: Path) -> int:
+        if self._corpus_writer is None:
+            raise RuntimeError(
+                "CorpusBuilderService requires the corpus writer to be enabled "
+                "(CORPUS_WRITER_ENABLED=true / corpus.enabled: true in YAML) — "
+                "it's currently disabled, so there would be nothing to inspect."
+            )
+
         documents = self._load(source)
         documents = self._extract_images(documents)
         documents = self._pre_process(documents)
-        self._write_corpus(documents)
-        chunks = self._chunker.chunk(documents)
-        embedded_chunks = self._embed(chunks)
-
-        self._vector_store.ensure_index_exists()
-        total = self._vector_store.upsert(embedded_chunks)
-
-        if self._relational_store and self._id_strategy:
-            self._relational_store.ensure_schema()
-            vector_ids = [self._id_strategy.generate_id(c) for c in embedded_chunks]
-            self._relational_store.save_chunks(embedded_chunks, vector_ids)
+        written = self._corpus_writer.write(documents)
 
         self._logger.info(
-            f"Pipeline complete — {total} vectors indexed from '{source.name}'."
+            f"Corpus-only build complete — {written} corpus file(s) written from "
+            f"'{source.name}' (no embedding or vector store involved)."
         )
-        return total
+        return written
 
     def _load(self, source: Path) -> list[Document]:
         if source.is_file():
@@ -131,16 +116,3 @@ class IngestionService:
         if self._pre_processor is None:
             return documents
         return self._pre_processor.process_all(documents)
-
-    def _write_corpus(self, documents: list[Document]) -> None:
-        if self._corpus_writer is None:
-            return
-        self._corpus_writer.write(documents)
-
-    def _embed(self, chunks: list[Document]) -> list[EmbeddedChunk]:
-        texts = [doc.page_content for doc in chunks]
-        vectors = self._embedding_provider.embed_texts(texts)
-        return [
-            EmbeddedChunk(document=doc, vector=vec)
-            for doc, vec in zip(chunks, vectors)
-        ]
